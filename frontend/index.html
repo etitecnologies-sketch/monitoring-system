@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Monitoring Dashboard</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; }
+      .app { padding: 24px; }
+      header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+      h1 { font-size: 1.5rem; }
+      .status { font-size: 0.85rem; padding: 4px 12px; border-radius: 999px; }
+      .online  { background: #14532d; color: #4ade80; }
+      .offline { background: #450a0a; color: #f87171; }
+      .empty { text-align: center; margin-top: 80px; color: #64748b; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; }
+      .host-card { background: #1e293b; border-radius: 12px; padding: 20px; }
+      .metric-card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 12px; }
+      .metrics-row { display: flex; gap: 24px; margin-bottom: 16px; }
+      .metric { display: flex; flex-direction: column; gap: 4px; }
+      .label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; }
+      .value { font-size: 1.8rem; font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
