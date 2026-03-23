@@ -330,33 +330,37 @@ def evaluate_triggers(cur, conn):
     cur.execute("SELECT id,name,expression,threshold,client_id FROM triggers WHERE enabled=TRUE")
     triggers=cur.fetchall()
     if not triggers: return
-    cur.execute("SELECT DISTINCT ON(host) host,cpu,memory,disk_percent,latency_ms,load_avg,temperature,device_id FROM metrics WHERE time>NOW()-INTERVAL '1 minute' ORDER BY host,time DESC")
+
+    # Get latest metrics with device info in one query
+    cur.execute("""
+        SELECT DISTINCT ON(m.host) 
+            m.host, m.cpu, m.memory, m.disk_percent, m.latency_ms, m.load_avg, m.temperature, 
+            m.device_id, d.client_id
+        FROM metrics m
+        LEFT JOIN devices d ON d.id = m.device_id
+        WHERE m.time > NOW() - INTERVAL '1 minute'
+        ORDER BY m.host, m.time DESC
+    """)
     metrics=cur.fetchall()
     if not metrics: return
+
     expr_idx={"cpu":1,"memory":2,"disk_percent":3,"latency_ms":4,"load_avg":5,"temperature":6}
     for trigger_id,name,expr,threshold,trigger_client_id in triggers:
         idx=expr_idx.get(expr)
         if idx is None: continue
+        
         for row in metrics:
-            host,cpu,memory,disk,latency,load,temp,device_id=row
-            # Verificar se device pertence ao cliente do trigger
-            if trigger_client_id and device_id:
-                try:
-                    cur.execute("SELECT client_id FROM devices WHERE id=%s",(device_id,))
-                    dr=cur.fetchone()
-                    if dr and dr[0] != trigger_client_id: continue
-                except: pass
+            host,cpu,memory,disk,latency,load,temp,device_id,device_client_id=row
+            
+            # Filter by client_id if trigger is client-specific
+            if trigger_client_id and device_client_id and trigger_client_id != device_client_id:
+                continue
+                
             vals=[None,cpu,memory,disk,latency,load,temp]
             value=vals[idx]
-            client_id=None
-            if device_id:
-                try:
-                    cur.execute("SELECT client_id FROM devices WHERE id=%s",(device_id,))
-                    dr=cur.fetchone()
-                    if dr: client_id=dr[0]
-                except: pass
+            
             if value is not None and float(value)>float(threshold):
-                fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id,client_id or trigger_client_id)
+                fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id,device_client_id or trigger_client_id)
 
 def evaluate_once():
     with get_conn() as conn:

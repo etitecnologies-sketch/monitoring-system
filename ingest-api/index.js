@@ -4,49 +4,101 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
+require("dotenv").config();
 
 const app = express();
-app.use(express.json());
-app.use(cors({ origin: "*" }));
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
-const JWT_SECRET    = process.env.JWT_SECRET || "changeme-secret-jwt";
+// ── Security & Middleware ────────────────────────────────────
+app.use(express.json({ limit: "10kb" })); // Limit payload size
+app.use(cors({ 
+  origin: process.env.CORS_ORIGIN || "*",
+  credentials: true,
+  optionsSuccessStatus: 200
+}));
+
+// Rate limiters
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per windowMs
+  message: "Too many login attempts, please try again later",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const metricsLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100, // 100 requests per minute
+  skip: (req) => req.headers["x-device-token"], // Skip for authenticated agents
+});
+
+// Database connection pool
+const pool = new Pool({ 
+  connectionString: process.env.DATABASE_URL,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || "changeme-secret-jwt";
 const WEBSOCKET_URL = process.env.WEBSOCKET_URL || "http://websocket:3001";
+
+// ── Logger ───────────────────────────────────────────────────
+function logger(level, message, data = {}) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [${level}]`, message, data);
+}
 
 // ── Auth middleware ───────────────────────────────────────────
 function auth(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "Token required" });
-  try { req.user = jwt.verify(token, JWT_SECRET); next(); }
-  catch { res.status(401).json({ error: "Invalid token" }); }
+  try { 
+    req.user = jwt.verify(token, JWT_SECRET); 
+    next(); 
+  } catch (e) { 
+    logger("WARN", "Invalid token attempt");
+    res.status(401).json({ error: "Invalid token" }); 
+  }
 }
 
-// Somente superadmin
+// Superadmin only
 function superadmin(req, res, next) {
   if (req.user.role !== "superadmin")
     return res.status(403).json({ error: "Superadmin only" });
   next();
 }
 
-// client_id do usuário (superadmin vê tudo, client vê só o seu)
+// Filter by client_id
 function clientFilter(req) {
   if (req.user.role === "superadmin") {
-    // Superadmin pode filtrar por cliente via query param
     return req.query.client_id ? parseInt(req.query.client_id) : null;
   }
   return req.user.client_id;
 }
 
-app.get("/health", (req, res) => res.json({ status: "ok", ts: Date.now() }));
+// ── Health Checks ────────────────────────────────────────────
+app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
+
 app.get("/ready", async (req, res) => {
-  try { await pool.query("SELECT 1"); res.json({ status: "ready" }); }
-  catch { res.status(503).json({ status: "not ready" }); }
+  try { 
+    await pool.query("SELECT 1"); 
+    res.json({ status: "ready", timestamp: new Date().toISOString() }); 
+  } catch (e) { 
+    logger("ERROR", "Readiness check failed");
+    res.status(503).json({ status: "not ready", error: e.message }); 
+  }
 });
 
 // ── Auth ─────────────────────────────────────────────────────
 app.get("/auth/status", async (req, res) => {
-  const r = await pool.query("SELECT id FROM users LIMIT 1");
-  res.json({ setupDone: r.rows.length > 0 });
+  try {
+    const r = await pool.query("SELECT id FROM users LIMIT 1");
+    res.json({ setupDone: r.rows.length > 0 });
+  } catch (e) {
+    logger("ERROR", "Auth status check failed");
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post("/auth/setup", async (req, res) => {
@@ -64,7 +116,7 @@ app.post("/auth/setup", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/auth/login", async (req, res) => {
+app.post("/auth/login", loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   try {
     const r = await pool.query("SELECT * FROM users WHERE username=$1", [username]);
@@ -336,7 +388,7 @@ app.delete("/triggers/:id", auth, async (req, res) => {
 });
 
 // ── Metrics ───────────────────────────────────────────────────
-app.post("/metrics", async (req, res) => {
+app.post("/metrics", metricsLimiter, async (req, res) => {
   const deviceToken = req.headers["x-device-token"] || req.body.device_token;
   const { host, cpu, memory, disk_used, disk_total, disk_percent,
           net_rx_bytes, net_tx_bytes, latency_ms, uptime_seconds,
@@ -433,8 +485,22 @@ app.get("/stats", auth, async (req, res) => {
 });
 
 app.get("/hosts", auth, async (req, res) => {
-  const r = await pool.query("SELECT * FROM hosts ORDER BY name");
-  res.json(r.rows);
+  try {
+    const cid = clientFilter(req);
+    let query = "SELECT DISTINCT h.* FROM hosts h";
+    const params = [];
+    
+    if (cid) {
+      params.push(cid);
+      query += ` JOIN devices d ON d.hostname = h.name OR d.ip_address = h.name WHERE d.client_id = $1`;
+    }
+    
+    query += " ORDER BY h.name";
+    const r = await pool.query(query, params);
+    res.json(r.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 // ── Listar marcas de inversores ───────────────────────────────
 app.get("/solar/brands", auth, (req, res) => {
@@ -611,5 +677,41 @@ app.get("/solar/summary", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 404 Handler ──────────────────────────────────────────────
+app.use((req, res) => {
+  res.status(404).json({ 
+    error: "Route not found",
+    path: req.path,
+    method: req.method
+  });
+});
+
+// ── Error Handler ────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  logger("ERROR", "Unhandled error", { 
+    message: err.message, 
+    path: req.path,
+    method: req.method 
+  });
+  res.status(err.status || 500).json({ 
+    error: err.message || "Internal server error"
+  });
+});
+
+// ── Server Startup ───────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`NexusWatch Pro API on :${PORT}`));
+app.listen(PORT, "0.0.0.0", () => {
+  logger("INFO", "🚀 NexusWatch Pro API started", { 
+    port: PORT,
+    environment: process.env.NODE_ENV || "production"
+  });
+});
+
+// ── Graceful Shutdown ────────────────────────────────────────
+process.on("SIGTERM", () => {
+  logger("WARN", "SIGTERM received, shutting down gracefully");
+  pool.end(() => {
+    logger("INFO", "Database pool closed");
+    process.exit(0);
+  });
+});

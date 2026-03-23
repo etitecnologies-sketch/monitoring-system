@@ -1,16 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from 'react';
 
 const API = window.location.hostname === "localhost"
   ? "http://localhost:3000"
-  : `${window.location.protocol}//${window.location.hostname}:3000`;
+  : `${window.location.origin.replace(/\/$/, "")}`;
 
-const TOKEN_KEY = "nw_token";
-const getToken  = () => localStorage.getItem(TOKEN_KEY);
-const setToken  = (t) => localStorage.setItem(TOKEN_KEY, t);
-const removeToken = () => localStorage.removeItem(TOKEN_KEY);
+const getToken = () => localStorage.getItem("token");
+const setToken = (t) => localStorage.setItem("token", t);
+const removeToken = () => localStorage.removeItem("token");
 
 async function api(path, opts = {}) {
   const token = getToken();
+
   const res = await fetch(`${API}${path}`, {
     ...opts,
     headers: {
@@ -19,7 +19,15 @@ async function api(path, opts = {}) {
       ...(opts.headers || {}),
     },
   });
+
+  if (res.status === 401) {
+    removeToken();
+    window.location.href = "/login";
+    return;
+  }
+
   if (!res.ok) throw await res.json();
+
   return res.json();
 }
 
@@ -847,7 +855,7 @@ function TriggersPage({ userRole }) {
   );
 }
 
-// ── App ───────────────────────────────────────────────────────
+// ── Solar ─────────────────────────────────────────────────────
 const BRANDS = [
   { value: "growatt",  label: "Growatt",           icon: "🟠" },
   { value: "fronius",  label: "Fronius",            icon: "🔵" },
@@ -902,7 +910,6 @@ function InverterModal({ inverter, clients, userRole, onSave, onClose }) {
       <div style={{ ...S.modalBox, width: 560 }} onClick={(e) => e.stopPropagation()}>
         <div style={S.modalTitle}>{inverter?.id ? "✏️ Editar Inversor" : "➕ Novo Inversor Solar"}</div>
 
-        {/* Info básica */}
         <div style={S.sectionTitle}>Identificação</div>
         {userRole === "superadmin" && clients && (
           <div style={S.fg}><label style={S.label}>Cliente</label>
@@ -945,10 +952,8 @@ function InverterModal({ inverter, clients, userRole, onSave, onClose }) {
 
         <div style={S.divider} />
 
-        {/* Credenciais por marca */}
         <div style={S.sectionTitle}>{brandIcon(brand)} Configuração {brandLabel(brand)}</div>
 
-        {/* GROWATT */}
         {brand === "growatt" && (
           <>
             <div style={S.fg}><label style={S.label}>Usuário ShineServer</label>
@@ -966,7 +971,6 @@ function InverterModal({ inverter, clients, userRole, onSave, onClose }) {
           </>
         )}
 
-        {/* FRONIUS */}
         {brand === "fronius" && (
           <>
             <div style={S.fg}><label style={S.label}>IP do Inversor na rede local</label>
@@ -981,7 +985,6 @@ function InverterModal({ inverter, clients, userRole, onSave, onClose }) {
           </>
         )}
 
-        {/* DEYE / SOLIS */}
         {(brand === "deye" || brand === "solis") && (
           <>
             <div style={S.fg}><label style={S.label}>SolarmanPV Token</label>
@@ -999,7 +1002,6 @@ function InverterModal({ inverter, clients, userRole, onSave, onClose }) {
           </>
         )}
 
-        {/* SMA */}
         {brand === "sma" && (
           <>
             <div style={S.fg}><label style={S.label}>IP do Inversor SMA (rede local)</label>
@@ -1011,7 +1013,6 @@ function InverterModal({ inverter, clients, userRole, onSave, onClose }) {
           </>
         )}
 
-        {/* GOODWE */}
         {brand === "goodwe" && (
           <>
             <div style={S.fg}><label style={S.label}>Usuário SEMS Portal</label>
@@ -1029,7 +1030,6 @@ function InverterModal({ inverter, clients, userRole, onSave, onClose }) {
           </>
         )}
 
-        {/* HUAWEI */}
         {brand === "huawei" && (
           <>
             <div style={S.fg}><label style={S.label}>Usuário FusionSolar</label>
@@ -1047,7 +1047,6 @@ function InverterModal({ inverter, clients, userRole, onSave, onClose }) {
           </>
         )}
 
-        {/* SAJ elekeeper */}
         {brand === "saj" && (
           <>
             <div style={S.sectionTitle}>⚙️ Configuração SAJ elekeeper</div>
@@ -1066,7 +1065,6 @@ function InverterModal({ inverter, clients, userRole, onSave, onClose }) {
           </>
         )}
 
-        {/* CANADIAN / GENÉRICO */}
         {(brand === "canadian" || brand === "risen" || brand === "other") && (
           <>
             <div style={S.fg}><label style={S.label}>URL da API (endpoint JSON)</label>
@@ -1132,7 +1130,6 @@ function SolarPage({ userRole }) {
         <button style={S.btn("primary")} onClick={() => setModal("new")}>+ Novo Inversor</button>
       </div>
 
-      {/* Stats */}
       <div style={S.grid(4)}>
         {[
           { label: "Inversores", value: summary.total_inverters, color: "#f59e0b", suffix: "" },
@@ -1147,7 +1144,6 @@ function SolarPage({ userRole }) {
         ))}
       </div>
 
-      {/* Filtros */}
       <div style={{ ...S.card, marginBottom: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <select style={{ ...S.select, maxWidth: 160 }} value={filter.brand} onChange={(e) => setFilter({ ...filter, brand: e.target.value })}>
           <option value="">Todas as marcas</option>
@@ -1162,7 +1158,6 @@ function SolarPage({ userRole }) {
         <span style={{ fontSize: 11, color: "#3a5070", alignSelf: "center" }}>{filtered.length} inversor(es)</span>
       </div>
 
-      {/* Cards dos inversores */}
       <div style={S.grid(3)}>
         {filtered.length === 0 && (
           <div style={{ ...S.card, gridColumn: "1/-1", textAlign: "center", padding: 40, color: "#3a5070" }}>
@@ -1179,7 +1174,6 @@ function SolarPage({ userRole }) {
 
           return (
             <div key={inv.id} style={{ ...S.card, border: `1px solid ${statusColor[status]}25` }}>
-              {/* Header */}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                 <span style={{ fontSize: 22 }}>{brandIcon(inv.brand)}</span>
                 <div style={{ flex: 1 }}>
@@ -1194,7 +1188,6 @@ function SolarPage({ userRole }) {
                 <div style={{ fontSize: 10, color: "#38bdf8", marginBottom: 10 }}>🏢 {inv.client_name}</div>
               )}
 
-              {/* Métricas principais */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
                 {[
                   { label: "Potência", value: `${power.toFixed(2)} kW`, color: "#38bdf8", icon: "⚡" },
@@ -1209,7 +1202,6 @@ function SolarPage({ userRole }) {
                 ))}
               </div>
 
-              {/* Receita total */}
               <div style={{ background: "#0d1520", borderRadius: 6, padding: 8, marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 10, color: "#3a5070" }}>💵 Receita Total Acumulada</span>
                 <span style={{ fontSize: 12, fontWeight: 700, color: "#a78bfa" }}>R$ {totalRevenue.toFixed(2)}</span>
@@ -1274,7 +1266,7 @@ export default function App() {
     { id: "devices",   label: "Devices",    icon: "🖥️" },
     { id: "triggers",  label: "Triggers",   icon: "⚡" },
     { id: "alerts",    label: "Alertas",    icon: "🚨" },
-	{ id: "solar", label: "Solar", icon: "☀️" },
+    { id: "solar", label: "Solar", icon: "☀️" },
   ];
 
   const NAV_CLIENT = [
@@ -1292,7 +1284,7 @@ export default function App() {
     devices:   <DevicesPage userRole={userRole} userClientId={userClientId} />,
     triggers:  <TriggersPage userRole={userRole} />,
     alerts:    <AlertsPage userRole={userRole} />,
-	solar: <SolarPage userRole={userRole} />,
+    solar: <SolarPage userRole={userRole} />,
   };
 
   return (

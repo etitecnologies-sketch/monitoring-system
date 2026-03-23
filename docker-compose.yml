@@ -4,14 +4,14 @@ services:
     image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
     environment:
-      POSTGRES_DB: monitoring
-      POSTGRES_USER: monitor
+      POSTGRES_DB: ${DB_NAME:-monitoring}
+      POSTGRES_USER: ${DB_USER:-monitor}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL","pg_isready -U monitor -d monitoring"]
+      test: ["CMD-SHELL","pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,7 +34,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: postgres://monitor:${DB_PASSWORD:-changeme}@db:5432/monitoring
+      DATABASE_URL: postgres://${DB_USER:-monitor}:${DB_PASSWORD:-changeme}@db:5432/${DB_NAME:-monitoring}
       WEBSOCKET_URL: http://websocket:3001
       JWT_SECRET: ${JWT_SECRET:-changeme-secret-jwt}
       PORT: 3000
@@ -52,7 +52,7 @@ services:
     build: ./processor
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://monitor:${DB_PASSWORD:-changeme}@db:5432/monitoring
+      DATABASE_URL: postgres://${DB_USER:-monitor}:${DB_PASSWORD:-changeme}@db:5432/${DB_NAME:-monitoring}
       EVAL_INTERVAL: ${EVAL_INTERVAL:-3}
       OFFLINE_TIMEOUT: ${OFFLINE_TIMEOUT:-60}
       ALERT_COOLDOWN: ${ALERT_COOLDOWN:-120}

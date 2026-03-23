@@ -2,6 +2,27 @@
 
 Sistema de monitoramento de infraestrutura estilo Zabbix, construído com stack moderna e pronto para produção.
 
+## 🚀 Instalação Rápida
+
+### Windows
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+.\install.ps1
+```
+
+### macOS / Linux
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+### Cross-platform (Windows, macOS, Linux)
+```bash
+python install.py
+```
+
+Para instruções detalhadas, veja [INSTALL.md](INSTALL.md)
+
 ## Arquitetura
 
 ```
