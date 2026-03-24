@@ -247,5 +247,45 @@ app.get("/stats", auth, async (req, res) => {
   res.json({ devices: parseInt(total.rows[0].count), online: parseInt(online.rows[0].count) });
 });
 
+// Clients (Superadmin only)
+app.get("/clients", auth, superadmin, async (req, res) => {
+  try {
+    const r = await pool.query("SELECT * FROM clients ORDER BY created_at DESC");
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/clients", auth, superadmin, async (req, res) => {
+  const { name, document, email, phone, address, city, state, plan, status, telegram_token, telegram_chat_id, alert_email, notes } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+  try {
+    const r = await pool.query(`
+      INSERT INTO clients (name, document, email, phone, address, city, state, plan, status, telegram_token, telegram_chat_id, alert_email, notes)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *
+    `, [name, document||"", email||"", phone||"", address||"", city||"", state||"", plan||"basic", status||"active", telegram_token||"", telegram_chat_id||"", alert_email||"", notes||""]);
+    res.status(201).json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put("/clients/:id", auth, superadmin, async (req, res) => {
+  const { name, document, email, phone, address, city, state, plan, status, telegram_token, telegram_chat_id, alert_email, notes } = req.body;
+  try {
+    const r = await pool.query(`
+      UPDATE clients SET name=$1, document=$2, email=$3, phone=$4, address=$5, city=$6, state=$7, plan=$8, status=$9, 
+        telegram_token=$10, telegram_chat_id=$11, alert_email=$12, notes=$13
+      WHERE id=$14 RETURNING *
+    `, [name, document||"", email||"", phone||"", address||"", city||"", state||"", plan||"basic", status||"active", 
+        telegram_token||"", telegram_chat_id||"", alert_email||"", notes||"", req.params.id]);
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/clients/:id", auth, superadmin, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM clients WHERE id=$1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
 app.listen(process.env.PORT || 3000, "0.0.0.0", () => console.log("Professional Ingest API Running"));
