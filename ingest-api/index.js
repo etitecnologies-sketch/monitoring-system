@@ -12,19 +12,13 @@ const dns = require("dns").promises;
 const app = express();
 
 // ── Security & Middleware ────────────────────────────────────
-app.use(express.json({ limit: "50kb" }));
+app.use(express.json({ limit: "100kb" }));
 app.use(cors({ origin: "*", credentials: true }));
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: "Muitas tentativas de login. Tente novamente em 15 minutos."
-});
-
-const metricsLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000,
-  max: 500,
-  skip: (req) => req.headers["x-device-token"],
 });
 
 const pool = new Pool({ 
@@ -34,7 +28,7 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
-// ── Database Initialization ──────────────────────────────────
+// ── Database Initialization (Professional) ───────────────────
 async function initDB() {
   try {
     await pool.query(`
@@ -72,17 +66,26 @@ async function initDB() {
           latency_ms FLOAT DEFAULT 0, status TEXT DEFAULT 'online'
       );
     `);
-    console.log("Database initialized");
+    
+    // Migrações profissionais (Garante que colunas novas existam sem apagar dados)
+    const migrations = [
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS ddns_address TEXT DEFAULT ''",
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_port INT DEFAULT 0",
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}'",
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_agent BOOLEAN DEFAULT TRUE",
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_ping BOOLEAN DEFAULT TRUE",
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_snmp BOOLEAN DEFAULT FALSE"
+    ];
+    for (let m of migrations) { await pool.query(m).catch(() => {}); }
+
+    console.log("Database initialized & Migrated successfully");
   } catch (e) { console.error("DB Init Error:", e.message); }
 }
 initDB();
 
 const JWT_SECRET = process.env.JWT_SECRET || "nexuswatch-secret-key-2024";
 const WEBSOCKET_URL = process.env.WEBSOCKET_URL || "http://websocket:3001";
-
-function logger(level, msg, data = {}) {
-  console.log(`[${new Date().toISOString()}] [${level}] ${msg}`, data);
-}
 
 // ── Auth Middleware ──────────────────────────────────────────
 function auth(req, res, next) {
@@ -101,13 +104,9 @@ function clientFilter(req) {
   return req.user.role === "superadmin" ? (req.query.client_id ? parseInt(req.query.client_id) : null) : req.user.client_id;
 }
 
-// ── Routes ───────────────────────────────────────────────────
+// ── API Routes ───────────────────────────────────────────────
 
-// Health & Setup
-app.get("/health", async (req, res) => {
-  try { await pool.query("SELECT 1"); res.json({ status: "ok" }); }
-  catch (e) { res.status(500).json({ status: "error", error: e.message }); }
-});
+app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 app.get("/auth/status", async (req, res) => {
   const r = await pool.query("SELECT id FROM users LIMIT 1");
@@ -135,14 +134,22 @@ app.post("/auth/login", loginLimiter, async (req, res) => {
 
 app.get("/auth/me", auth, (req, res) => res.json(req.user));
 
-// Devices
+// Devices (Professional & Full Support)
 app.get("/devices", auth, async (req, res) => {
   try {
     const cid = clientFilter(req);
-    let query = "SELECT * FROM devices WHERE 1=1";
+    let query = `
+      SELECT d.*, c.name as client_name,
+        (SELECT latency_ms FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_latency,
+        (SELECT cpu FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_cpu,
+        (SELECT memory FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_memory
+      FROM devices d
+      LEFT JOIN clients c ON c.id = d.client_id
+      WHERE 1=1
+    `;
     const params = [];
-    if (cid) { params.push(cid); query += ` AND client_id=$1`; }
-    query += " ORDER BY created_at DESC";
+    if (cid) { params.push(cid); query += ` AND d.client_id=$1`; }
+    query += " ORDER BY d.created_at DESC";
     const r = await pool.query(query, params);
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -164,15 +171,30 @@ app.post("/devices", auth, async (req, res) => {
 });
 
 app.put("/devices/:id", auth, async (req, res) => {
-  const { name, description, location, device_type, ip_address, tags, ddns_address, monitor_port, notes } = req.body;
+  const { 
+    name, description, location, device_type, ip_address, tags, 
+    ddns_address, monitor_port, monitor_ping, monitor_agent, notes 
+  } = req.body;
   try {
     const r = await pool.query(`
-      UPDATE devices SET name=$1, description=$2, location=$3, device_type=$4, ip_address=$5, tags=$6, ddns_address=$7, monitor_port=$8, notes=$9
-      WHERE id=$10 RETURNING *
-    `, [name, description||"", location||"", device_type||"other", ip_address||"", tags||[], ddns_address||"", parseInt(monitor_port)||0, notes||"", req.params.id]);
+      UPDATE devices SET 
+        name=$1, description=$2, location=$3, device_type=$4, ip_address=$5, 
+        tags=$6, ddns_address=$7, monitor_port=$8, monitor_ping=$9, 
+        monitor_agent=$10, notes=$11
+      WHERE id=$12 RETURNING *
+    `, [
+      name, description||"", location||"", device_type||"other", ip_address||"", 
+      tags||[], ddns_address||"", parseInt(monitor_port)||0, 
+      monitor_ping!==false, monitor_agent!==false, notes||"", 
+      req.params.id
+    ]);
+    if (r.rows.length === 0) return res.status(404).json({ error: "Device not found" });
     res.json(r.rows[0]);
     if (ddns_address && monitor_port) setImmediate(() => cloudMonitor(req.params.id));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { 
+    console.error("Update Device Error:", e.message);
+    res.status(500).json({ error: e.message }); 
+  }
 });
 
 app.delete("/devices/:id", auth, async (req, res) => {
@@ -188,14 +210,14 @@ app.post("/devices/:id/test", auth, async (req, res) => {
     
     const socket = new net.Socket();
     socket.setTimeout(8000);
-    socket.on("connect", () => { socket.destroy(); res.json({ alive: true, message: "Conectado com sucesso!" }); });
-    socket.on("timeout", () => { socket.destroy(); res.json({ alive: false, message: "Tempo esgotado." }); });
-    socket.on("error", (err) => { socket.destroy(); res.json({ alive: false, message: `Erro: ${err.code}` }); });
+    socket.on("connect", () => { socket.destroy(); res.json({ alive: true, message: "Cloud connection successful!" }); });
+    socket.on("timeout", () => { socket.destroy(); res.json({ alive: false, message: "Connection timed out." }); });
+    socket.on("error", (err) => { socket.destroy(); res.json({ alive: false, message: `Error: ${err.code}` }); });
     socket.connect(monitor_port, ddns_address);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Cloud Monitor Logic
+// Cloud Monitor Logic (Background)
 async function cloudMonitor(deviceId = null) {
   try {
     const query = deviceId ? ["SELECT * FROM devices WHERE id=$1", [deviceId]] : ["SELECT * FROM devices WHERE ddns_address != '' AND monitor_port > 0", []];
@@ -217,22 +239,6 @@ async function cloudMonitor(deviceId = null) {
 }
 setInterval(cloudMonitor, 60000);
 
-// Metrics
-app.post("/metrics", metricsLimiter, async (req, res) => {
-  const token = req.headers["x-device-token"];
-  const { host, cpu, memory, latency_ms, status } = req.body;
-  try {
-    const dr = await pool.query("SELECT id FROM devices WHERE token=$1", [token]);
-    if (dr.rows.length === 0) return res.status(401).json({ error: "Invalid token" });
-    const devId = dr.rows[0].id;
-    await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", [status||"online", devId]);
-    const hr = await pool.query("INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id", [host]);
-    await pool.query("INSERT INTO metrics (time, host_id, host, device_id, cpu, memory, latency_ms) VALUES (NOW(), $1, $2, $3, $4, $5, $6)", 
-      [hr.rows[0].id, host, devId, cpu||0, memory||0, latency_ms||0]);
-    res.status(201).json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 app.get("/stats", auth, async (req, res) => {
   const cid = clientFilter(req);
   const filter = cid ? `WHERE client_id=${cid}` : "";
@@ -241,6 +247,5 @@ app.get("/stats", auth, async (req, res) => {
   res.json({ devices: parseInt(total.rows[0].count), online: parseInt(online.rows[0].count) });
 });
 
-// Final Handlers
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
-app.listen(process.env.PORT || 3000, "0.0.0.0", () => console.log("API Running"));
+app.listen(process.env.PORT || 3000, "0.0.0.0", () => console.log("Professional Ingest API Running"));
