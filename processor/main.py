@@ -138,7 +138,7 @@ def collect_snmp(ip, community, version="2c"):
 def check_ping_devices(cur, conn):
     cur.execute("""SELECT id,name,ip_address,device_type,tags,status,
         snmp_community,snmp_version,monitor_snmp,hostname,client_id,ddns_address,monitor_port
-        FROM devices WHERE (ip_address IS NOT NULL AND ip_address!='' AND monitor_ping=TRUE)
+        FROM devices WHERE (ip_address IS NOT NULL AND ip_address!='' AND (monitor_ping=TRUE OR monitor_port > 0))
         OR (ddns_address IS NOT NULL AND ddns_address!='' AND monitor_port > 0)""")
     devices=cur.fetchall()
     if not devices: return
@@ -166,7 +166,23 @@ def check_ping_devices(cur, conn):
             except:
                 pass
                 
-        # 2. Se não funcionou DDNS ou não tem, tenta Ping se tiver IP
+        # 2. Se não funcionou DDNS ou não tem, tenta TCP no IP (caso de VPN/Private IP)
+        if not alive and ip and port:
+            import socket
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(PING_TIMEOUT)
+                start = time.time()
+                result = s.connect_ex((ip, int(port)))
+                latency = round((time.time() - start) * 1000, 1)
+                s.close()
+                if result == 0:
+                    alive = True
+                    method = f"VPN-TCP:{port}"
+            except:
+                pass
+
+        # 3. Se ainda não funcionou ou não tem porta, tenta Ping se tiver IP
         if not alive and ip:
             alive, latency = ping(ip, PING_TIMEOUT)
             method = "PING"

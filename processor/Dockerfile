@@ -1,9 +1,14 @@
 FROM python:3.11-slim
 
-# Instalar ping (iputils-ping) e snmp tools
+# Instalar dependências de rede e Tailscale
 RUN apt-get update && apt-get install -y --no-install-recommends \
     iputils-ping \
     snmp \
+    curl \
+    ca-certificates \
+    iptables \
+    ip6tables \
+    && curl -fsSL https://tailscale.com/install.sh | sh \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
