@@ -800,6 +800,7 @@ function DevicesPage({ userRole, userClientId }) {
 
 // ── Dashboard ─────────────────────────────────────────────────
 function Dashboard({ userRole }) {
+  const isMobile = useIsMobile();
   const [stats, setStats] = useState({ devices: 0, online: 0, offline: 0, clients: 0 });
   const [devices, setDevices] = useState([]);
   const [alerts, setAlerts] = useState([]);
