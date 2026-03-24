@@ -618,15 +618,17 @@ app.post("/metrics", metricsLimiter, async (req, res) => {
     if (deviceToken) {
       const dr = await client.query("SELECT id, client_id FROM devices WHERE token=$1", [deviceToken]);
       if (dr.rows.length > 0) {
-        clientId = dr.rows[0].client_id;
+        clientId = dr.rows[0].id; // O ID do dispositivo que enviou (o Agent)
+        const client_id_owner = dr.rows[0].client_id;
+        
         // Se o corpo enviou um device_id específico (ex: sub-dispositivo monitorado pelo agente)
         targetDeviceId = device_id || dr.rows[0].id;
         
         // Atualiza o status do dispositivo (seja o principal ou o monitorado)
         const deviceStatus = status || 'online';
         await client.query(
-          "UPDATE devices SET last_seen=NOW(), status=$1 WHERE id=$2 AND (id=$3 OR client_id=$4)",
-          [deviceStatus, targetDeviceId, dr.rows[0].id, clientId]
+          "UPDATE devices SET last_seen=NOW(), status=$1 WHERE id=$2",
+          [deviceStatus, targetDeviceId]
         );
       }
     }
