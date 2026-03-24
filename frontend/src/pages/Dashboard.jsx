@@ -15,9 +15,9 @@ function fmtUptime(s) {
   return `${m}m`;
 }
 function statusColor(val, warn, crit) {
-  if(val>=crit) return "#f87171";
-  if(val>=warn) return "#fb923c";
-  return "#10b981";
+  if(val>=crit) return "#ff0055"; // Pink/Red neon
+  if(val>=warn) return "#ffae00"; // Orange neon
+  return "#00f2ff"; // Cyan neon
 }
 
 function MiniGauge({ value=0, warn=60, crit=80, size=68 }) {
@@ -25,21 +25,28 @@ function MiniGauge({ value=0, warn=60, crit=80, size=68 }) {
   const r=(size/2)-7, circ=2*Math.PI*r;
   const dash=circ*0.75, offset=dash*(1-Math.min(value,100)/100);
   return (
-    <svg width={size} height={size} style={{transform:"rotate(135deg)"}}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1a1a2a" strokeWidth={7}
+    <svg width={size} height={size} style={{transform:"rotate(135deg)", filter: `drop-shadow(0 0 3px ${c}66)`}}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={7}
         strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"/>
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={c} strokeWidth={7}
         strokeDasharray={`${Math.max(dash-offset,0)} ${circ}`} strokeLinecap="round"
-        style={{transition:"stroke-dasharray .5s ease"}}/>
+        style={{transition:"stroke-dasharray .8s cubic-bezier(0.4, 0, 0.2, 1)"}}/>
     </svg>
   );
 }
 
 function StatBadge({ label, value, color, unit="" }) {
   return (
-    <div style={{background:"#0d0d16",border:"1px solid #1a1a2a",borderRadius:10,padding:"10px 12px",minWidth:90}}>
-      <div style={{fontSize:10,color:"#475569",textTransform:"uppercase",letterSpacing:"0.6px",marginBottom:5}}>{label}</div>
-      <div style={{fontSize:18,fontWeight:700,color}}>{value}{unit}</div>
+    <div style={{
+      background: "rgba(10, 15, 26, 0.4)",
+      border: "1px solid rgba(255,255,255,0.05)",
+      borderRadius: 12,
+      padding: "12px 15px",
+      minWidth: 100,
+      boxShadow: "0 4px 15px rgba(0,0,0,0.2)"
+    }}>
+      <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"1.2px",marginBottom:6,fontWeight:600}}>{label}</div>
+      <div style={{fontSize:20,fontWeight:700,color,textShadow:`0 0 10px ${color}44`}}>{value}<span style={{fontSize:12,marginLeft:2,opacity:0.7}}>{unit}</span></div>
     </div>
   );
 }
@@ -82,123 +89,144 @@ function HostCard({ host, data, deviceMap }) {
   const chartData = tab==="live" ? realtimeData : history;
 
   return (
-    <div style={{background:"#0f0f18",border:`1px solid ${isOnline?"#6366f128":"#1a1a2a"}`,borderRadius:16,padding:20,transition:"border-color .3s"}}>
+    <div style={{
+      background: "rgba(15, 15, 24, 0.6)",
+      backdropFilter: "blur(10px)",
+      border: `1px solid ${isOnline?"rgba(0, 242, 255, 0.2)":"rgba(255, 0, 85, 0.15)"}`,
+      borderRadius: 20,
+      padding: 24,
+      transition: "all 0.4s ease",
+      boxShadow: isOnline ? "0 10px 30px rgba(0, 242, 255, 0.05)" : "none",
+      position: "relative",
+      overflow: "hidden"
+    }}>
+      {/* Decorative corner */}
+      <div style={{
+        position: "absolute",
+        top: 0,
+        right: 0,
+        width: 40,
+        height: 40,
+        background: `linear-gradient(45deg, transparent 50%, ${isOnline?"#00f2ff22":"#ff005522"} 50%)`,
+      }} />
 
       {/* Header */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:8}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
           <div style={{position:"relative",flexShrink:0}}>
-            <div style={{width:42,height:42,background:isOnline?"#0d1f14":"#0f0f18",border:`1px solid ${isOnline?"#10b98140":"#1a1a2a"}`,
-              borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <rect x="2" y="3" width="20" height="14" rx="2" stroke={isOnline?"#10b981":"#475569"} strokeWidth="1.5"/>
-                <path d="M8 21h8M12 17v4" stroke={isOnline?"#10b981":"#475569"} strokeWidth="1.5" strokeLinecap="round"/>
+            <div style={{
+              width: 50,
+              height: 50,
+              background: isOnline ? "rgba(0, 242, 255, 0.05)" : "rgba(255, 0, 85, 0.05)",
+              border: `1px solid ${isOnline ? "rgba(0, 242, 255, 0.3)" : "rgba(255, 0, 85, 0.3)"}`,
+              borderRadius: 14,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: isOnline ? "0 0 15px rgba(0, 242, 255, 0.1)" : "none"
+            }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                <rect x="2" y="3" width="20" height="14" rx="2" stroke={isOnline?"#00f2ff":"#ff0055"} strokeWidth="1.5"/>
+                <path d="M8 21h8M12 17v4" stroke={isOnline?"#00f2ff":"#ff0055"} strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
             </div>
-            <span style={{position:"absolute",bottom:-2,right:-2,width:10,height:10,borderRadius:"50%",
-              background:isOnline?"#10b981":"#f87171",border:"2px solid #0f0f18",
-              boxShadow:isOnline?"0 0 8px #10b98199":"0 0 8px #f8717199"}}/>
+            <span style={{
+              position: "absolute",
+              bottom: -2,
+              right: -2,
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              background: isOnline ? "#00f2ff" : "#ff0055",
+              border: "3px solid #0f0f18",
+              boxShadow: isOnline ? "0 0 10px #00f2ff" : "0 0 10px #ff0055"
+            }}/>
           </div>
           <div style={{minWidth:0}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-              {device?.name || host}
-            </div>
-            <div style={{fontSize:11,color:"#475569",marginTop:2}}>
-              {device?.location ? `📍 ${device.location}` : `🖥 ${host}`}
-            </div>
+            <div style={{fontSize:18,fontWeight:700,color:"#fff",letterSpacing:0.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{host}</div>
+            <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginTop:2}}>{device?.name || "Dispositivo Desconhecido"}</div>
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{fontSize:11,fontWeight:600,color:isOnline?"#10b981":"#f87171",
-            background:isOnline?"#0d1f14":"#1a0a0a",border:`1px solid ${isOnline?"#10b98140":"#f8717140"}`,
-            borderRadius:20,padding:"3px 10px",display:"flex",alignItems:"center",gap:5}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:isOnline?"#10b981":"#f87171",display:"inline-block"}}/>
-            {isOnline?"Online":"Offline"}
-          </span>
-          <div style={{display:"flex",gap:3}}>
-            {["live","history"].map(t=>(
-              <button key={t} onClick={()=>setTab(t)}
-                style={{background:tab===t?"#1e1e36":"transparent",border:`1px solid ${tab===t?"#6366f160":"#1a1a2a"}`,
-                  color:tab===t?"#a5b4fc":"#475569",cursor:"pointer",padding:"4px 10px",borderRadius:7,fontSize:11}}>
-                {t==="live"?"⚡ Live":"📈 24h"}
-              </button>
-            ))}
-          </div>
+        <div style={{display:"flex",gap:6}}>
+          {["live", "history"].map(t=>(
+            <button key={t} onClick={()=>setTab(t)} style={{
+              padding: "6px 12px",
+              borderRadius: 6,
+              border: "1px solid",
+              borderColor: tab===t ? "rgba(0, 242, 255, 0.3)" : "rgba(255,255,255,0.05)",
+              background: tab===t ? "rgba(0, 242, 255, 0.1)" : "transparent",
+              color: tab===t ? "#00f2ff" : "#64748b",
+              fontSize: 10,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: 1,
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}>
+              {t==="live" ? "Real-time" : "24h History"}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Gauges principais */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
-        {[
-          {label:"CPU",val:cpu,warn:60,crit:80,unit:"%"},
-          {label:"Memory",val:mem,warn:70,crit:85,unit:"%"},
-          {label:"Disk",val:disk,warn:70,crit:90,unit:"%"},
-        ].map(({label,val,warn,crit,unit})=>(
-          <div key={label} style={{background:"#0d0d16",borderRadius:12,padding:"12px 8px",textAlign:"center",position:"relative"}}>
-            <MiniGauge value={val} warn={warn} crit={crit}/>
-            <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-60%)",
-              fontSize:14,fontWeight:700,color:statusColor(val,warn,crit)}}>
-              {val}%
-            </div>
-            <div style={{fontSize:10,color:"#475569",textTransform:"uppercase",letterSpacing:"0.6px",marginTop:4}}>{label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Stats extras */}
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
-        <StatBadge label="Latency" value={lat} color={statusColor(lat,200,500)} unit="ms"/>
-        <StatBadge label="Load avg" value={load} color={statusColor(load,2,5)} />
-        <StatBadge label="Uptime"  value={fmtUptime(data.uptime_seconds)} color="#6366f1"/>
-        <StatBadge label="Processes" value={procs} color="#94a3b8"/>
-        {temp>0 && <StatBadge label="Temp" value={temp} color={statusColor(temp,60,80)} unit="°C"/>}
-        <div style={{background:"#0d0d16",border:"1px solid #1a1a2a",borderRadius:10,padding:"10px 12px",flex:1,minWidth:120}}>
-          <div style={{fontSize:10,color:"#475569",textTransform:"uppercase",letterSpacing:"0.6px",marginBottom:5}}>Network</div>
-          <div style={{fontSize:12,color:"#60a5fa"}}>↓ {fmtBytes(data.net_rx_bytes)}</div>
-          <div style={{fontSize:12,color:"#a78bfa",marginTop:2}}>↑ {fmtBytes(data.net_tx_bytes)}</div>
+      {/* Main Gauges */}
+      <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",marginBottom:24,background:"rgba(255,255,255,0.02)",padding:"20px 10px",borderRadius:16,border:"1px solid rgba(255,255,255,0.03)"}}>
+        <div style={{textAlign:"center"}}>
+          <MiniGauge value={cpu} warn={60} crit={85}/>
+          <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1.5,marginTop:8,fontWeight:600}}>CPU</div>
+          <div style={{fontSize:16,fontWeight:700,color:statusColor(cpu,60,85)}}>{cpu}%</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <MiniGauge value={mem} warn={75} crit={90}/>
+          <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1.5,marginTop:8,fontWeight:600}}>RAM</div>
+          <div style={{fontSize:16,fontWeight:700,color:statusColor(mem,75,90)}}>{mem}%</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <MiniGauge value={disk} warn={80} crit={95}/>
+          <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1.5,marginTop:8,fontWeight:600}}>DISK</div>
+          <div style={{fontSize:16,fontWeight:700,color:statusColor(disk,80,95)}}>{disk}%</div>
         </div>
       </div>
 
-      {/* Chart */}
-      {loading ? (
-        <div style={{textAlign:"center",color:"#475569",padding:24,fontSize:13}}>Loading history...</div>
-      ) : chartData.length > 0 ? (
-        <div style={{background:"#0d0d16",borderRadius:12,padding:"12px 8px 4px"}}>
-          <ResponsiveContainer width="100%" height={150}>
-            <AreaChart data={chartData} margin={{top:0,right:4,bottom:0,left:-24}}>
-              <defs>
-                {[["cpu","#6366f1"],["mem","#f59e0b"],["disk","#10b981"]].map(([k,c])=>(
-                  <linearGradient key={k} id={`g${k}${host}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor={c} stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor={c} stopOpacity={0}/>
-                  </linearGradient>
-                ))}
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1a1a2a" vertical={false}/>
-              <XAxis dataKey="time" tick={{fontSize:9,fill:"#3f3f5a"}} interval="preserveStartEnd"/>
-              <YAxis domain={[0,100]} unit="%" tick={{fontSize:9,fill:"#3f3f5a"}}/>
-              <Tooltip contentStyle={{background:"#0f0f18",border:"1px solid #1e1e2e",borderRadius:8,fontSize:12}}
-                labelStyle={{color:"#94a3b8"}} formatter={v=>`${v}%`}/>
-              <Legend wrapperStyle={{fontSize:11}}/>
-              <Area type="monotone" dataKey="cpu"  stroke="#6366f1" fill={`url(#gcpu${host})`}  dot={false} strokeWidth={1.5} name="CPU"/>
-              <Area type="monotone" dataKey="mem"  stroke="#f59e0b" fill={`url(#gmem${host})`}  dot={false} strokeWidth={1.5} name="Memory"/>
-              <Area type="monotone" dataKey="disk" stroke="#10b981" fill={`url(#gdisk${host})`} dot={false} strokeWidth={1.5} name="Disk"/>
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      ) : (
-        <div style={{textAlign:"center",color:"#3f3f5a",padding:20,fontSize:12}}>No data yet</div>
-      )}
+      {/* Chart Section */}
+      <div style={{height:160,marginBottom:24,position:"relative"}}>
+        {loading && <div style={{position:"absolute",inset:0,background:"rgba(15,15,24,0.8)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10,borderRadius:8,fontSize:12,color:"#00f2ff",letterSpacing:2}}>SCANNING...</div>}
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData}>
+            <defs>
+              <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#00f2ff" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="#00f2ff" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false}/>
+            <XAxis dataKey="time" hide/>
+            <YAxis hide domain={[0,100]}/>
+            <Tooltip
+              contentStyle={{background:"rgba(10,15,26,0.9)",border:"1px solid rgba(0,242,255,0.3)",borderRadius:8,fontSize:11,color:"#fff",backdropFilter:"blur(4px)"}}
+              itemStyle={{padding:0}}
+            />
+            <Area type="monotone" dataKey="cpu" stroke="#00f2ff" strokeWidth={2} fillOpacity={1} fill="url(#colorCpu)" animationDuration={1000}/>
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
 
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12}}>
-        <span style={{fontSize:11,color:"#3f3f5a"}}>
-          {data.time ? `Updated ${new Date(data.time).toLocaleTimeString()}` : "Waiting for data..."}
-        </span>
-        {data.device_id && <span style={{fontSize:11,color:"#3f3f5a"}}>ID #{data.device_id}</span>}
+      {/* Footer Stats */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:12}}>
+        <StatBadge label="Latency" value={lat} unit="ms" color="#00f2ff"/>
+        <StatBadge label="Load" value={load} color="#a78bfa"/>
+        <StatBadge label="Temp" value={temp} unit="°" color={statusColor(temp, 65, 80)}/>
+      </div>
+
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+        <div style={{fontSize:10,color:"#475569",display:"flex",alignItems:"center",gap:5}}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:isOnline?"#00f2ff":"#ff0055"}}/>
+          UPTIME: {fmtUptime(data.uptime_seconds)}
+        </div>
+        <div style={{fontSize:10,color:"#475569"}}>PROCESSES: {procs}</div>
       </div>
     </div>
   );
-}
 
 export default function Dashboard({ hosts }) {
   const [devices, setDevices] = useState([]);

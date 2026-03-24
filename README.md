@@ -1,8 +1,18 @@
-# 📡 Monitoring System
+# 📡 NexusWatch Pro - Monitoring System
 
-Sistema de monitoramento de infraestrutura estilo Zabbix, construído com stack moderna e pronto para produção.
+Sistema de monitoramento de infraestrutura moderno, com **Layout Futurista**, alta performance e pronto para rodar 24/7.
 
-## 🚀 Instalação Rápida
+## ✨ Destaques do Layout Futurista
+- **Glassmorphism**: Efeito de vidro fosco em todos os cards e modais.
+- **Neon Glow**: Cores vibrantes (Cyan, Purple, Pink) com brilho neon para status.
+- **Background Animado**: Grade tecnológica e scanlines para imersão total.
+- **Typography**: Fontes modernas (Rajdhani & JetBrains Mono) para leitura técnica.
+- **Real-time**: Atualização instantânea via WebSockets.
+
+## 🚀 Deploy em 1-Clique no Railway
+Este projeto está otimizado para o **Railway.app**. Veja o guia completo em [DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md).
+
+## 🛠️ Instalação Rápida Local
 
 ### Windows
 ```powershell

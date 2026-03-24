@@ -3,27 +3,99 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Monitoring Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; }
-      .app { padding: 24px; }
-      header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-      h1 { font-size: 1.5rem; }
-      .status { font-size: 0.85rem; padding: 4px 12px; border-radius: 999px; }
-      .online  { background: #14532d; color: #4ade80; }
-      .offline { background: #450a0a; color: #f87171; }
-      .empty { text-align: center; margin-top: 80px; color: #64748b; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; }
-      .host-card { background: #1e293b; border-radius: 12px; padding: 20px; }
-      .metric-card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 12px; }
-      .metrics-row { display: flex; gap: 24px; margin-bottom: 16px; }
-      .metric { display: flex; flex-direction: column; gap: 4px; }
-      .label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; }
-      .value { font-size: 1.8rem; font-weight: bold; }
+      body { 
+        font-family: 'Rajdhani', sans-serif; 
+        background: #050508; 
+        color: #e2e8f0; 
+        overflow: hidden;
+      }
+      
+      /* Futuristic Grid Background */
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: 
+          linear-gradient(rgba(18, 16, 33, 0.5) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(18, 16, 33, 0.5) 1px, transparent 1px);
+        background-size: 30px 30px;
+        z-index: -1;
+        pointer-events: none;
+      }
+
+      /* Scanline Effect */
+      body::after {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          rgba(18, 16, 33, 0) 50%,
+          rgba(0, 0, 0, 0.1) 50%
+        ), linear-gradient(
+          90deg,
+          rgba(255, 0, 0, 0.03),
+          rgba(0, 255, 0, 0.01),
+          rgba(0, 0, 255, 0.03)
+        );
+        background-size: 100% 4px, 3px 100%;
+        z-index: 1000;
+        pointer-events: none;
+        opacity: 0.3;
+      }
+
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0a0a0f;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #1a1a25;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #38bdf844;
+      }
+
+      /* Animations */
+      @keyframes pulse-glow {
+        0% { box-shadow: 0 0 5px rgba(56, 189, 248, 0.2); }
+        50% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.4); }
+        100% { box-shadow: 0 0 5px rgba(56, 189, 248, 0.2); }
+      }
+
+      @keyframes scanline {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100%); }
+      }
+
+      .scan-line {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: rgba(56, 189, 248, 0.1);
+        z-index: 999;
+        pointer-events: none;
+        animation: scanline 8s linear infinite;
+      }
     </style>
   </head>
   <body>
+    <div class="scan-line"></div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

@@ -1,71 +1,47 @@
-# Deploy Gratuito no Railway 🚀
+# Deploy no Railway 🚀
 
-Railway oferece $5/mês de crédito grátis — suficiente para rodar este projeto 24/7.
+Este sistema está pronto para rodar 24/7 no Railway. O projeto utiliza múltiplos serviços (frontend, backend, banco de dados) que o Railway gerencia automaticamente através do arquivo `docker-compose.yml`.
 
-## Passo a passo
+## Passo a passo para Deploy
 
-### 1. Criar conta
-Acesse https://railway.app e faça login com GitHub.
+### 1. Preparar o Repositório
+- Suba este código para um repositório no seu GitHub.
+- Certifique-se de que o `.gitignore` está ignorando arquivos `.env`.
 
-### 2. Instalar Railway CLI (PowerShell)
-```powershell
-iwr -useb https://railway.app/install.ps1 | iex
+### 2. Conectar ao Railway
+- Acesse [railway.app](https://railway.app) e faça login com GitHub.
+- Clique em **"New Project"** → **"Deploy from GitHub repo"**.
+- Selecione o repositório deste projeto.
+
+### 3. Configuração Automática
+- O Railway detectará o arquivo `docker-compose.yml` e criará todos os serviços necessários:
+  - `db` (TimescaleDB/PostgreSQL)
+  - `ingest-api` (API Principal)
+  - `websocket` (Real-time)
+  - `processor` (Processamento de alertas e dados)
+  - `frontend` (Painel Web)
+
+### 4. Configurar Variáveis de Ambiente
+No painel do Railway, você precisará definir algumas variáveis globais ou específicas para os serviços (em **Shared Variables** ou no serviço correspondente):
+
+```env
+DB_PASSWORD=uma-senha-segura-aqui
+JWT_SECRET=uma-string-longa-e-aleatoria
+CORS_ORIGIN=*
+# O Railway injeta DATABASE_URL automaticamente se você usar o serviço de banco dele
 ```
 
-### 3. Login no Railway
-```powershell
-railway login
-```
+### 5. Configurações Específicas
+- **Frontend**: O Railway gera uma URL pública para o serviço `frontend`. Certifique-se de que o Nginx no frontend está configurado para apontar para os nomes internos dos serviços (já está configurado como `ingest-api:3000`).
+- **WebSocket**: O frontend tentará conectar no WebSocket via URL relativa em produção.
 
-### 4. Criar projeto
-```powershell
-cd "C:\Users\EZEQUIEL LIMA GUIDA\Desktop\monitoring-system"
-railway init
-```
+## Por que Railway?
+- **Sempre Online**: Ideal para monitoramento 24h.
+- **Banco de Dados Real**: Oferece PostgreSQL/TimescaleDB persistente.
+- **Escalabilidade**: Você pode escalar cada serviço individualmente se necessário.
+- **SSL Automático**: Já vem com HTTPS configurado por padrão.
 
-### 5. Adicionar banco TimescaleDB
-No painel do Railway (railway.app):
-- Clique em "New Service" → "Database" → "PostgreSQL"
-- Anote a DATABASE_URL gerada
-
-### 6. Configurar variáveis de ambiente
-No painel Railway → seu projeto → Variables:
-```
-DB_PASSWORD=sua-senha-forte
-JWT_SECRET=string-aleatoria-longa-aqui
-CORS_ORIGIN=https://seu-projeto.up.railway.app
-SMTP_HOST=smtp.gmail.com        # opcional
-SMTP_USER=seu@gmail.com         # opcional
-SMTP_PASS=sua-app-password      # opcional
-ALERT_EMAIL=destino@gmail.com   # opcional
-```
-
-### 7. Deploy
-```powershell
-railway up
-```
-
-### 8. Abrir no navegador
-```powershell
-railway open
-```
-
-## Dicas importantes
-
-- **WebSocket**: No Railway, a URL pública muda. Após o deploy, 
-  atualize VITE_WEBSOCKET_URL no frontend com a URL do serviço websocket.
-
-- **Domínio grátis**: Railway gera URLs tipo `projeto.up.railway.app`
-
-- **Sempre online**: Railway mantém os serviços rodando 24/7 
-  enquanto houver créditos.
-
-- **Monitorar gastos**: Acesse railway.app/account/billing
-
-## Alternativa: Render.com
-
-1. Acesse https://render.com
-2. "New" → "Web Service" → conecte seu GitHub
-3. Configure cada serviço separadamente
-4. Plano gratuito dorme após 15min de inatividade
-   (Railway é melhor para este caso)
+## Dicas para GitHub
+- Nunca suba o arquivo `.env` com senhas reais.
+- Use o `.env.example` como referência para outros usuários.
+- O arquivo `README.md` principal já contém instruções de instalação local.

@@ -1,7 +1,11 @@
 // ── Config ────────────────────────────────────────────────
 const API_BASE = window.location.hostname === "localhost"
   ? "http://localhost:3000"
-  : `${window.location.origin.replace(/\/$/, "")}`;
+  : ""; // Em produção usa URLs relativas via Nginx proxy
+
+const WS_URL = window.location.hostname === "localhost"
+  ? "http://localhost:3001"
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}/socket.io`;
 
 const DEFAULT_TIMEOUT = 10000; // 10s
 const MAX_RETRIES = 2;

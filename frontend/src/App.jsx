@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 const API = window.location.hostname === "localhost"
   ? "http://localhost:3000"
-  : `${window.location.origin.replace(/\/$/, "")}`;
+  : ""; // Em produção usa URLs relativas via Nginx proxy
 
 const getToken = () => localStorage.getItem("token");
 const setToken = (t) => localStorage.setItem("token", t);
@@ -68,45 +68,194 @@ const planColor   = (p) => PLANS.find((x) => x.value === p)?.color || "#64748b";
 
 // ── Styles ────────────────────────────────────────────────────
 const S = {
-  app: { minHeight: "100vh", background: "#080c14", color: "#e2e8f0", fontFamily: "'JetBrains Mono', monospace", display: "flex" },
-  sidebar: { width: 230, background: "#0a0f1a", borderRight: "1px solid #1a2535", display: "flex", flexDirection: "column", padding: "20px 0", flexShrink: 0 },
-  logo: { padding: "0 20px 24px", borderBottom: "1px solid #1a2535", marginBottom: 12 },
-  logoTitle: { fontSize: 17, fontWeight: 700, color: "#38bdf8", letterSpacing: 1 },
-  logoSub: { fontSize: 10, color: "#3a5070", marginTop: 2 },
-  navSection: { fontSize: 9, color: "#3a5070", padding: "12px 20px 4px", textTransform: "uppercase", letterSpacing: 2 },
-  navItem: (a) => ({ display: "flex", alignItems: "center", gap: 9, padding: "9px 20px", cursor: "pointer", color: a ? "#38bdf8" : "#4a6080", background: a ? "rgba(56,189,248,0.07)" : "transparent", borderLeft: a ? "2px solid #38bdf8" : "2px solid transparent", fontSize: 12, fontWeight: a ? 600 : 400, transition: "all 0.15s", userSelect: "none" }),
-  main: { flex: 1, overflow: "auto", padding: 24 },
-  pageTitle: { fontSize: 20, fontWeight: 700, color: "#f1f5f9", marginBottom: 4, letterSpacing: 0.5 },
-  pageSub: { fontSize: 11, color: "#3a5070", marginBottom: 20 },
-  grid: (cols) => ({ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 14, marginBottom: 20 }),
-  card: { background: "#0a0f1a", border: "1px solid #1a2535", borderRadius: 10, padding: 18 },
-  statCard: (c) => ({ background: "#0a0f1a", border: `1px solid ${c}25`, borderRadius: 10, padding: 18 }),
-  statVal: (c) => ({ fontSize: 30, fontWeight: 700, color: c, lineHeight: 1 }),
-  statLabel: { fontSize: 10, color: "#3a5070", marginTop: 5, textTransform: "uppercase", letterSpacing: 1 },
-  badge: (c) => ({ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 4, fontSize: 10, fontWeight: 600, background: `${c}18`, color: c, border: `1px solid ${c}35` }),
-  btn: (v = "primary") => ({ padding: "7px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit", background: v === "primary" ? "#38bdf8" : v === "danger" ? "#ef4444" : v === "purple" ? "#a78bfa" : "#1a2535", color: v === "ghost" ? "#64748b" : "#080c14", transition: "opacity 0.15s" }),
-  btnSm: (v = "ghost") => ({ padding: "3px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600, fontFamily: "inherit", background: v === "danger" ? "#ef444418" : "#1a2535", color: v === "danger" ? "#ef4444" : "#64748b" }),
-  input: { width: "100%", background: "#080c14", border: "1px solid #1a2535", borderRadius: 6, padding: "7px 11px", color: "#e2e8f0", fontSize: 11, fontFamily: "inherit", boxSizing: "border-box", outline: "none" },
-  select: { width: "100%", background: "#080c14", border: "1px solid #1a2535", borderRadius: 6, padding: "7px 11px", color: "#e2e8f0", fontSize: 11, fontFamily: "inherit", boxSizing: "border-box", outline: "none" },
-  label: { fontSize: 10, color: "#3a5070", marginBottom: 3, display: "block", textTransform: "uppercase", letterSpacing: 0.5 },
-  fg: { marginBottom: 12 },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 11 },
-  th: { padding: "7px 10px", textAlign: "left", color: "#3a5070", borderBottom: "1px solid #1a2535", fontSize: 9, textTransform: "uppercase", letterSpacing: 1 },
-  td: { padding: "9px 10px", borderBottom: "1px solid #0d1520", color: "#94a3b8" },
-  modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
-  modalBox: { background: "#0a0f1a", border: "1px solid #1a2535", borderRadius: 12, padding: 24, width: 540, maxHeight: "92vh", overflowY: "auto" },
-  modalTitle: { fontSize: 15, fontWeight: 700, color: "#f1f5f9", marginBottom: 18 },
-  sectionTitle: { fontSize: 10, fontWeight: 700, color: "#38bdf8", marginBottom: 12, textTransform: "uppercase", letterSpacing: 1.5 },
-  divider: { borderTop: "1px solid #1a2535", margin: "14px 0" },
-  tag: { display: "inline-flex", alignItems: "center", gap: 3, background: "#1a2535", color: "#38bdf8", borderRadius: 4, padding: "2px 7px", fontSize: 10, fontWeight: 600, marginRight: 4, marginBottom: 4 },
+  app: { 
+    minHeight: "100vh", 
+    background: "transparent", 
+    color: "#e2e8f0", 
+    fontFamily: "'Rajdhani', sans-serif", 
+    display: "flex",
+    position: "relative"
+  },
+  sidebar: { 
+    width: 240, 
+    background: "rgba(5, 5, 10, 0.8)", 
+    backdropFilter: "blur(12px)",
+    borderRight: "1px solid rgba(56, 189, 248, 0.2)", 
+    display: "flex", 
+    flexDirection: "column", 
+    padding: "20px 0", 
+    flexShrink: 0,
+    boxShadow: "10px 0 30px rgba(0,0,0,0.5)"
+  },
+  logo: { padding: "0 24px 24px", borderBottom: "1px solid rgba(56, 189, 248, 0.1)", marginBottom: 12 },
+  logoTitle: { 
+    fontSize: 22, 
+    fontWeight: 700, 
+    color: "#38bdf8", 
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    textShadow: "0 0 10px rgba(56, 189, 248, 0.5)"
+  },
+  logoSub: { fontSize: 10, color: "#3a5070", marginTop: 2, letterSpacing: 1 },
+  navSection: { fontSize: 10, color: "#4a6080", padding: "16px 24px 8px", textTransform: "uppercase", letterSpacing: 2, fontWeight: 600 },
+  navItem: (a) => ({ 
+    display: "flex", 
+    alignItems: "center", 
+    gap: 12, 
+    padding: "12px 24px", 
+    cursor: "pointer", 
+    color: a ? "#fff" : "#4a6080", 
+    background: a ? "linear-gradient(90deg, rgba(56,189,248,0.15) 0%, transparent 100%)" : "transparent", 
+    borderLeft: a ? "3px solid #38bdf8" : "3px solid transparent", 
+    fontSize: 14, 
+    fontWeight: a ? 600 : 500, 
+    transition: "all 0.3s ease", 
+    userSelect: "none",
+    textShadow: a ? "0 0 8px rgba(56, 189, 248, 0.5)" : "none"
+  }),
+  main: { flex: 1, overflow: "auto", padding: "30px 40px", background: "rgba(0,0,0,0.2)" },
+  pageTitle: { 
+    fontSize: 28, 
+    fontWeight: 700, 
+    color: "#fff", 
+    marginBottom: 6, 
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    textShadow: "0 0 15px rgba(255,255,255,0.2)"
+  },
+  pageSub: { fontSize: 12, color: "#64748b", marginBottom: 30, letterSpacing: 0.5 },
+  grid: (cols) => ({ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 20, marginBottom: 20 }),
+  card: { 
+    background: "rgba(10, 15, 26, 0.6)", 
+    backdropFilter: "blur(8px)",
+    border: "1px solid rgba(56, 189, 248, 0.15)", 
+    borderRadius: 12, 
+    padding: 24,
+    boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+    position: "relative",
+    overflow: "hidden"
+  },
+  statCard: (c) => ({ 
+    background: "rgba(10, 15, 26, 0.6)", 
+    backdropFilter: "blur(8px)",
+    border: `1px solid ${c}40`, 
+    borderRadius: 12, 
+    padding: 24,
+    boxShadow: `0 0 20px ${c}10`
+  }),
+  statVal: (c) => ({ 
+    fontSize: 36, 
+    fontWeight: 700, 
+    color: c, 
+    lineHeight: 1,
+    textShadow: `0 0 15px ${c}60`
+  }),
+  statLabel: { fontSize: 11, color: "#64748b", marginTop: 8, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 500 },
+  badge: (c) => ({ 
+    display: "inline-flex", 
+    alignItems: "center", 
+    gap: 4, 
+    padding: "3px 10px", 
+    borderRadius: 4, 
+    fontSize: 10, 
+    fontWeight: 700, 
+    background: `${c}15`, 
+    color: c, 
+    border: `1px solid ${c}40`,
+    textTransform: "uppercase",
+    letterSpacing: 0.5
+  }),
+  btn: (v = "primary") => ({ 
+    padding: "10px 20px", 
+    borderRadius: 6, 
+    border: "1px solid transparent", 
+    cursor: "pointer", 
+    fontSize: 12, 
+    fontWeight: 700, 
+    fontFamily: "inherit", 
+    background: v === "primary" ? "#38bdf8" : v === "danger" ? "#ef4444" : v === "purple" ? "#a78bfa" : "rgba(30, 41, 59, 0.5)", 
+    color: v === "ghost" ? "#94a3b8" : "#050508", 
+    transition: "all 0.2s ease",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    boxShadow: v !== "ghost" ? `0 4px 14px ${v === "primary" ? "#38bdf844" : v === "danger" ? "#ef444444" : "#00000044"}` : "none"
+  }),
+  btnSm: (v = "ghost") => ({ 
+    padding: "5px 12px", 
+    borderRadius: 4, 
+    border: "1px solid rgba(56, 189, 248, 0.1)", 
+    cursor: "pointer", 
+    fontSize: 10, 
+    fontWeight: 600, 
+    fontFamily: "inherit", 
+    background: v === "danger" ? "#ef444422" : "rgba(30, 41, 59, 0.3)", 
+    color: v === "danger" ? "#ef4444" : "#94a3b8",
+    transition: "all 0.2s"
+  }),
+  input: { 
+    width: "100%", 
+    background: "rgba(5, 5, 10, 0.6)", 
+    border: "1px solid rgba(56, 189, 248, 0.2)", 
+    borderRadius: 8, 
+    padding: "10px 14px", 
+    color: "#fff", 
+    fontSize: 13, 
+    fontFamily: "inherit", 
+    boxSizing: "border-box", 
+    outline: "none",
+    transition: "border-color 0.2s",
+    "&:focus": { borderColor: "#38bdf8" }
+  },
+  select: { 
+    width: "100%", 
+    background: "rgba(5, 5, 10, 0.6)", 
+    border: "1px solid rgba(56, 189, 248, 0.2)", 
+    borderRadius: 8, 
+    padding: "10px 14px", 
+    color: "#fff", 
+    fontSize: 13, 
+    fontFamily: "inherit", 
+    boxSizing: "border-box", 
+    outline: "none" 
+  },
+  label: { fontSize: 11, color: "#64748b", marginBottom: 6, display: "block", textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 },
+  fg: { marginBottom: 20 },
+  table: { width: "100%", borderCollapse: "separate", borderSpacing: "0 8px", fontSize: 13 },
+  th: { padding: "12px 15px", textAlign: "left", color: "#4a6080", fontSize: 10, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 700 },
+  td: { padding: "15px", background: "rgba(15, 23, 42, 0.3)", borderTop: "1px solid rgba(56, 189, 248, 0.05)", borderBottom: "1px solid rgba(56, 189, 248, 0.05)", color: "#cbd5e1" },
+  modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  modalBox: { 
+    background: "rgba(10, 15, 26, 0.95)", 
+    border: "1px solid rgba(56, 189, 248, 0.3)", 
+    borderRadius: 16, 
+    padding: 32, 
+    width: 580, 
+    maxHeight: "90vh", 
+    overflowY: "auto",
+    boxShadow: "0 0 50px rgba(0,0,0,0.5), 0 0 20px rgba(56, 189, 248, 0.1)"
+  },
+  modalTitle: { fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 24, textTransform: "uppercase", letterSpacing: 1 },
+  sectionTitle: { fontSize: 11, fontWeight: 700, color: "#38bdf8", marginBottom: 16, textTransform: "uppercase", letterSpacing: 2 },
+  divider: { borderTop: "1px solid rgba(56, 189, 248, 0.1)", margin: "20px 0" },
+  tag: { display: "inline-flex", alignItems: "center", gap: 3, background: "rgba(56, 189, 248, 0.1)", color: "#38bdf8", border: "1px solid rgba(56, 189, 248, 0.3)", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600, marginRight: 6, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
 };
 
 // ── Components ────────────────────────────────────────────────
 function Bar({ value, color = "#38bdf8" }) {
   const p = Math.min(value || 0, 100);
   return (
-    <div style={{ height: 3, borderRadius: 2, background: "#1a2535", position: "relative", overflow: "hidden", marginTop: 3 }}>
-      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${p}%`, background: p > 85 ? "#ef4444" : p > 60 ? "#f59e0b" : color, borderRadius: 2, transition: "width 0.5s" }} />
+    <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.05)", position: "relative", overflow: "hidden", marginTop: 4 }}>
+      <div style={{ 
+        position: "absolute", 
+        left: 0, 
+        top: 0, 
+        bottom: 0, 
+        width: `${p}%`, 
+        background: p > 85 ? "#ef4444" : p > 60 ? "#f59e0b" : color, 
+        borderRadius: 2, 
+        transition: "width 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
+        boxShadow: `0 0 8px ${p > 85 ? "#ef4444" : p > 60 ? "#f59e0b" : color}aa`
+      }} />
     </div>
   );
 }
@@ -163,16 +312,36 @@ function AuthPage({ onLogin }) {
 
   return (
     <div style={{ ...S.app, alignItems: "center", justifyContent: "center" }}>
-      <div style={{ ...S.card, width: 340, textAlign: "center" }}>
-        <div style={{ fontSize: 28, marginBottom: 6 }}>📡</div>
-        <div style={{ ...S.logoTitle, fontSize: 22, marginBottom: 2 }}>NexusWatch Pro</div>
-        <div style={{ ...S.logoSub, fontSize: 11, marginBottom: 24 }}>Infrastructure Monitor</div>
-        <div style={S.fg}><input style={S.input} placeholder="Usuário" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></div>
-        <div style={S.fg}><input style={S.input} type="password" placeholder="Senha" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && submit()} /></div>
-        {err && <div style={{ color: "#ef4444", fontSize: 11, marginBottom: 10 }}>{err}</div>}
-        <button style={{ ...S.btn("primary"), width: "100%" }} onClick={submit} disabled={loading}>
-          {loading ? "..." : step === "setup" ? "Criar conta" : "Entrar"}
+      <div style={{ 
+        ...S.card, 
+        width: 380, 
+        textAlign: "center", 
+        padding: 40,
+        border: "1px solid rgba(56, 189, 248, 0.3)",
+        boxShadow: "0 0 50px rgba(0, 0, 0, 0.5), 0 0 20px rgba(56, 189, 248, 0.1)"
+      }}>
+        <div style={{ fontSize: 42, marginBottom: 16, filter: "drop-shadow(0 0 10px rgba(56, 189, 248, 0.5))" }}>📡</div>
+        <div style={{ ...S.logoTitle, fontSize: 28, marginBottom: 4 }}>NexusWatch Pro</div>
+        <div style={{ ...S.logoSub, fontSize: 12, marginBottom: 32 }}>INFRASTRUCTURE MONITORING</div>
+        
+        <div style={S.fg}>
+          <label style={S.label}>Usuário</label>
+          <input style={S.input} placeholder="Seu usuário" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+        </div>
+        <div style={S.fg}>
+          <label style={S.label}>Senha</label>
+          <input style={S.input} type="password" placeholder="Sua senha" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && submit()} />
+        </div>
+        
+        {err && <div style={{ color: "#ff0055", fontSize: 12, marginBottom: 16, fontWeight: 600 }}>⚠️ {err}</div>}
+        
+        <button style={{ ...S.btn("primary"), width: "100%", marginTop: 10, height: 45 }} onClick={submit} disabled={loading}>
+          {loading ? "PROCESSANDO..." : step === "setup" ? "CRIAR CONTA MASTER" : "INICIAR SESSÃO"}
         </button>
+
+        <div style={{ marginTop: 24, fontSize: 11, color: "#4a6080", letterSpacing: 1 }}>
+          SISTEMA DE MONITORAMENTO 24/7
+        </div>
       </div>
     </div>
   );
@@ -1289,7 +1458,34 @@ export default function App() {
 
   return (
     <div style={S.app}>
-      <style>{`*{box-sizing:border-box;margin:0;padding:0}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:#080c14}::-webkit-scrollbar-thumb{background:#1a2535;border-radius:3px}input[type=checkbox]{accent-color:#38bdf8}@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap')`}</style>
+      <style>{`
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.2); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.4); }
+        input[type=checkbox] { accent-color: #38bdf8; }
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        body {
+          margin: 0;
+          padding: 0;
+          overflow: hidden;
+          background: #050508;
+        }
+
+        .glass {
+          background: rgba(255, 255, 255, 0.03);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        @keyframes pulse {
+          0% { opacity: 0.6; }
+          50% { opacity: 1; }
+          100% { opacity: 0.6; }
+        }
+      `}</style>
 
       <div style={S.sidebar}>
         <div style={S.logo}>

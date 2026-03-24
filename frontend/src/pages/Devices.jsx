@@ -3,13 +3,31 @@ import { api } from "../api";
 
 function StatusBadge({ status, lastSeen }) {
   const isOnline = lastSeen && (Date.now() - new Date(lastSeen)) < 30000;
-  const color = isOnline ? "#10b981" : status === "pending" ? "#f59e0b" : "#64748b";
-  const label = isOnline ? "Online" : status === "pending" ? "Pending" : "Offline";
+  const color = isOnline ? "#00f2ff" : status === "pending" ? "#ffae00" : "#ff0055";
+  const label = isOnline ? "ONLINE" : status === "pending" ? "PENDING" : "OFFLINE";
   return (
-    <span style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12,
-      background: isOnline?"#052e16":status==="pending"?"#1c1007":"#0f172a",
-      color, border:`1px solid ${color}30`, borderRadius:20, padding:"3px 10px", fontWeight:500 }}>
-      <span style={{ width:6, height:6, borderRadius:"50%", background:color, display:"inline-block" }}/>
+    <span style={{ 
+      display:"inline-flex", 
+      alignItems:"center", 
+      gap:6, 
+      fontSize:10,
+      background: `${color}15`,
+      color, 
+      border:`1px solid ${color}40`, 
+      borderRadius:4, 
+      padding:"4px 10px", 
+      fontWeight:700,
+      letterSpacing: 1,
+      textShadow: `0 0 8px ${color}44`
+    }}>
+      <span style={{ 
+        width:6, 
+        height:6, 
+        borderRadius:"50%", 
+        background:color, 
+        display:"inline-block",
+        boxShadow: `0 0 8px ${color}`
+      }}/>
       {label}
     </span>
   );
@@ -23,15 +41,31 @@ function TokenBox({ token }) {
     setCopied(true); setTimeout(()=>setCopied(false), 2000);
   }
   return (
-    <div style={{ background:"#0a0a0f", border:"1px solid #1e1e2e", borderRadius:8,
-      padding:"8px 12px", display:"flex", alignItems:"center", gap:8, marginTop:8 }}>
-      <code style={{ flex:1, fontSize:11, color:"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+    <div style={{ 
+      background:"rgba(5, 5, 10, 0.6)", 
+      border:"1px solid rgba(56, 189, 248, 0.2)", 
+      borderRadius:8,
+      padding:"10px 14px", 
+      display:"flex", 
+      alignItems:"center", 
+      gap:10, 
+      marginTop:10 
+    }}>
+      <code style={{ 
+        flex:1, 
+        fontSize:12, 
+        color:"#38bdf8", 
+        overflow:"hidden", 
+        textOverflow:"ellipsis", 
+        whiteSpace:"nowrap",
+        fontFamily: "'JetBrains Mono', monospace"
+      }}>
         {show ? token : "••••••••••••••••••••••••••••••••"}
       </code>
-      <button onClick={()=>setShow(s=>!s)} style={S.iconBtn} title={show?"Hide":"Show"}>
+      <button onClick={()=>setShow(s=>!s)} style={{...S.iconBtn, color: "#64748b"}} title={show?"Hide":"Show"}>
         {show ? "🙈" : "👁"}
       </button>
-      <button onClick={copy} style={S.iconBtn} title="Copy">
+      <button onClick={copy} style={{...S.iconBtn, color: copied ? "#00f2ff" : "#64748b"}} title="Copy">
         {copied ? "✓" : "📋"}
       </button>
     </div>
