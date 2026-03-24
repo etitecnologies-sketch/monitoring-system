@@ -152,6 +152,7 @@ async function initDB() {
 
     // Migration helper: Add missing columns to existing tables
     const tables = {
+      clients: ['document', 'email', 'phone', 'address', 'city', 'state', 'plan', 'status', 'telegram_token', 'telegram_chat_id', 'alert_email', 'notes'],
       users: ['role', 'client_id'],
       devices: ['client_id', 'ip_address', 'device_type', 'tags', 'snmp_community', 'snmp_version', 'ssh_user', 'ssh_port', 'monitor_ping', 'monitor_snmp', 'monitor_agent', 'notes'],
       metrics: ['host_id', 'disk_used', 'disk_total', 'net_rx_bytes', 'net_tx_bytes', 'load_avg', 'processes', 'temperature'],
@@ -322,7 +323,7 @@ app.post("/clients", auth, superadmin, async (req, res) => {
   const { name, document, email, phone, address, city, state, plan, status,
           telegram_token, telegram_chat_id, alert_email, notes } = req.body;
   
-  logger("INFO", "Attempting to create client", { name, user: req.user.username });
+  console.log(`[API] Creating client: ${name} (User: ${req.user.username})`);
 
   if (!name) return res.status(400).json({ error: "Name required" });
   try {
@@ -333,10 +334,10 @@ app.post("/clients", auth, superadmin, async (req, res) => {
     `, [name, document||"", email||"", phone||"", address||"", city||"", state||"",
         plan||"basic", status||"active", telegram_token||"", telegram_chat_id||"", alert_email||"", notes||""]);
     
-    logger("INFO", "Client created successfully", { id: r.rows[0].id, name });
+    console.log(`[API] Client created successfully! ID: ${r.rows[0].id}`);
     res.status(201).json(r.rows[0]);
   } catch (e) { 
-    logger("ERROR", "Failed to create client", { error: e.message });
+    console.error(`[API] Error creating client: ${e.message}`);
     res.status(500).json({ error: e.message }); 
   }
 });

@@ -381,7 +381,10 @@ function ClientModal({ client, onSave, onClose }) {
       if (client?.id) await api(`/clients/${client.id}`, { method: "PUT", body: JSON.stringify(form) });
       else await api("/clients", { method: "POST", body: JSON.stringify(form) });
       onSave();
-    } catch (e) { setErr(e.error || "Erro"); }
+    } catch (e) { 
+      console.error("Save Client Error:", e);
+      setErr(e.error || e.message || "Erro ao salvar cliente no banco de dados"); 
+    }
     finally { setLoading(false); }
   };
 
