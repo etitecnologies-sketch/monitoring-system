@@ -7,6 +7,8 @@ const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
+const net = require("net");
+
 const app = express();
 
 // ── Security & Middleware ────────────────────────────────────
@@ -929,7 +931,72 @@ app.listen(PORT, "0.0.0.0", () => {
   });
 });
 
-// ── Graceful Shutdown ────────────────────────────────────────
+// ── Graceful Shutdown ──────────────────────────────────────────
+// --- MONITORAMENTO CLOUD (SEM AGENTE) ---
+async function cloudMonitor() {
+  try {
+    const r = await pool.query(
+      "SELECT id, name, ddns_address, monitor_port, ip_address, monitor_ping FROM devices WHERE ddns_address <> '' AND monitor_port > 0"
+    );
+    
+    for (const dev of r.rows) {
+      const { id, name, ddns_address, monitor_port } = dev;
+      
+      const check = () => new Promise((resolve) => {
+        const socket = new net.Socket();
+        const start = Date.now();
+        socket.setTimeout(3000);
+
+        socket.on("connect", () => {
+          const lat = Date.now() - start;
+          socket.destroy();
+          resolve({ alive: true, lat });
+        });
+
+        socket.on("timeout", () => {
+          socket.destroy();
+          resolve({ alive: false, lat: 0 });
+        });
+
+        socket.on("error", () => {
+          socket.destroy();
+          resolve({ alive: false, lat: 0 });
+        });
+
+        socket.connect(monitor_port, ddns_address);
+      });
+
+      const result = await check();
+      const status = result.alive ? 'online' : 'offline';
+      
+      // Atualiza o status no banco
+      await pool.query(
+        "UPDATE devices SET last_seen=NOW(), status=$1 WHERE id=$2",
+        [status, id]
+      );
+
+      // Registra métrica básica (latência)
+      await pool.query(`
+        INSERT INTO metrics (time, host, device_id, cpu, memory, latency_ms, status)
+        VALUES (NOW(), $1, $2, 0, 0, $3, $4)
+      `, [name, id, result.lat, status]);
+
+      if (result.alive) {
+        logger("INFO", `Cloud Check: ${name} (${ddns_address}:${monitor_port}) está ONLINE (${result.lat}ms)`);
+      } else {
+        logger("WARN", `Cloud Check: ${name} (${ddns_address}:${monitor_port}) está OFFLINE`);
+      }
+    }
+  } catch (e) {
+    logger("ERROR", `Erro no CloudMonitor: ${e.message}`);
+  }
+}
+
+// Inicia o monitoramento a cada 1 minuto
+setInterval(cloudMonitor, 60000);
+// Executa a primeira vez após 10 segundos do boot
+setTimeout(cloudMonitor, 10000);
+
 process.on("SIGTERM", () => {
   logger("WARN", "SIGTERM received, shutting down gracefully");
   pool.end(() => {
