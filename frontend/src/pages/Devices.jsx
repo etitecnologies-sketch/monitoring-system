@@ -1,16 +1,54 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 
+const S = {
+  page: { padding: "30px", minHeight: "100vh" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "30px" },
+  pageTitle: { fontSize: "28px", fontWeight: "700", color: "#fff", letterSpacing: "-0.5px" },
+  addBtn: { 
+    background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)", 
+    color: "#fff", border: "none", borderRadius: "12px", padding: "12px 24px", 
+    cursor: "pointer", fontWeight: "600", boxShadow: "0 4px 15px rgba(99, 102, 241, 0.3)"
+  },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "24px" },
+  card: { 
+    background: "rgba(19, 19, 26, 0.7)", backdropFilter: "blur(12px)", 
+    border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "20px", 
+    padding: "24px", position: "relative", overflow: "hidden"
+  },
+  cardHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" },
+  deviceName: { fontSize: "18px", fontWeight: "600", color: "#fff" },
+  deviceSub: { fontSize: "13px", color: "#94a3b8", fontFamily: "'JetBrains Mono', monospace" },
+  deviceInfo: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "20px", padding: "16px", background: "rgba(255,255,255,0.03)", borderRadius: "12px" },
+  infoItem: { display: "flex", flexDirection: "column", gap: "4px" },
+  infoLabel: { fontSize: "10px", color: "#64748b", textTransform: "uppercase" },
+  infoValue: { fontSize: "13px", color: "#e2e8f0", fontWeight: "500" },
+  actions: { display: "flex", gap: "10px", marginTop: "24px" },
+  editBtn: { flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#e2e8f0", borderRadius: "10px", padding: "8px", fontSize: "13px", cursor: "pointer" },
+  delBtn: { flex: 1, background: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.1)", color: "#f87171", borderRadius: "10px", padding: "8px", fontSize: "13px", cursor: "pointer" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  modal: { background: "#13131a", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "24px", padding: "32px", width: "100%", maxWidth: "700px" },
+  modalHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "30px" },
+  modalTitle: { fontSize: "22px", fontWeight: "700", color: "#fff" },
+  closeBtn: { background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: "24px" },
+  formGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" },
+  formGroup: { display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px" },
+  label: { fontSize: "12px", color: "#94a3b8", fontWeight: "600", textTransform: "uppercase" },
+  input: { background: "rgba(0, 0, 0, 0.2)", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "12px", padding: "12px 16px", color: "#fff", fontSize: "14px", outline: "none" },
+  modalFoot: { display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "20px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "24px" },
+  saveBtn: { background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)", color: "#fff", border: "none", borderRadius: "12px", padding: "12px 30px", cursor: "pointer", fontWeight: "600" },
+  cancelBtn: { background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: "12px", padding: "12px 24px", cursor: "pointer" },
+  tokenAlert: { background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: "16px", padding: "20px", marginBottom: "24px" },
+};
+
 function StatusBadge({ status, lastSeen }) {
-  const isOnline = lastSeen && (Date.now() - new Date(lastSeen)) < 60000;
-  const color = isOnline ? "#10b981" : status === "pending" ? "#f59e0b" : "#ef4444";
+  const isOnline = status === "online" || (lastSeen && (Date.now() - new Date(lastSeen)) < 120000);
+  const color = isOnline ? "#10b981" : "#ef4444";
   return (
-    <span style={{ 
-      background: `${color}20`, color, border: `1px solid ${color}40`,
-      borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700
-    }}>
-      {isOnline ? "ONLINE" : status?.toUpperCase() || "OFFLINE"}
-    </span>
+    <div style={{ display: "flex", alignItems: "center", gap: "6px", background: `${color}15`, padding: "6px 12px", borderRadius: "100px", border: `1px solid ${color}30` }}>
+      <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: color, boxShadow: `0 0 10px ${color}` }}></div>
+      <span style={{ fontSize: "11px", fontWeight: "700", color, textTransform: "uppercase" }}>{isOnline ? "Online" : "Offline"}</span>
+    </div>
   );
 }
 
@@ -18,10 +56,13 @@ function DeviceModal({ device, onClose, onSave }) {
   const [name, setName] = useState(device?.name || "");
   const [desc, setDesc] = useState(device?.description || "");
   const [loc, setLoc] = useState(device?.location || "");
-  const [type, setType] = useState(device?.device_type || "server");
+  const [type, setType] = useState(device?.device_type || "camera");
   const [ip, setIp] = useState(device?.ip_address || "");
   const [ddns, setDdns] = useState(device?.ddns_address || "");
   const [port, setPort] = useState(device?.monitor_port || "");
+  const [tags, setTags] = useState(device?.tags?.join(", ") || "");
+  const [ping, setPing] = useState(device?.monitor_ping !== false);
+  const [agent, setAgent] = useState(device?.monitor_agent !== false);
   const [loading, setLoading] = useState(false);
   const [newToken, setNewToken] = useState(null);
 
@@ -30,17 +71,18 @@ function DeviceModal({ device, onClose, onSave }) {
     setLoading(true);
     const data = { 
       name: name.trim(), description: desc, location: loc, device_type: type,
-      ip_address: ip, ddns_address: ddns, monitor_port: parseInt(port) || 0
+      ip_address: ip, ddns_address: ddns, monitor_port: parseInt(port) || 0,
+      tags: tags.split(",").map(t => t.trim()).filter(t => t),
+      monitor_ping: ping, monitor_agent: agent
     };
     try {
-      if (device) {
-        await api.updateDevice(device.id, data);
-      } else {
+      if (device) await api.updateDevice(device.id, data);
+      else {
         const res = await api.createDevice(data);
-        if (res.token) setNewToken(res.token);
+        if (res.token) { setNewToken(res.token); onSave(); return; }
       }
       onSave();
-      if (device || !newToken) onClose();
+      onClose();
     } catch (err) {
       alert("Erro ao salvar: " + err.message);
     } finally {
@@ -52,30 +94,53 @@ function DeviceModal({ device, onClose, onSave }) {
     <div style={S.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={S.modal}>
         <div style={S.modalHead}>
-          <span style={S.modalTitle}>{device ? "Editar Dispositivo" : "Novo Dispositivo"}</span>
+          <span style={S.modalTitle}>{device ? `Configurar: ${device.name}` : "Cadastrar Novo Dispositivo"}</span>
           <button onClick={onClose} style={S.closeBtn}>✕</button>
         </div>
 
         {newToken && (
           <div style={S.tokenAlert}>
-            <p style={{ color: "#10b981", fontWeight: 600, fontSize: 13 }}>✓ Criado! Salve este token:</p>
-            <code style={{ display: "block", background: "#000", padding: 10, borderRadius: 6, marginTop: 5, fontSize: 12, wordBreak: "break-all" }}>{newToken}</code>
-            <button onClick={onClose} style={{ ...S.saveBtn, marginTop: 10, width: "100%" }}>Concluído</button>
+            <p style={{ color: "#10b981", fontWeight: "600", marginBottom: "10px" }}>✓ Dispositivo cadastrado! Token para o agente:</p>
+            <code style={{ display: "block", background: "#000", padding: "15px", borderRadius: "10px", fontSize: "13px", color: "#34d399", wordBreak: "break-all" }}>{newToken}</code>
+            <button onClick={onClose} style={{ ...S.saveBtn, marginTop: "20px", width: "100%" }}>Entendido</button>
           </div>
         )}
 
         {!newToken && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
-            <div style={S.formGroup}><label style={S.label}>Nome *</label><input style={S.input} value={name} onChange={e=>setName(e.target.value)} /></div>
-            <div style={S.formGroup}><label style={S.label}>DDNS / DNS</label><input style={S.input} value={ddns} onChange={e=>setDdns(e.target.value)} placeholder="ex: camera.ddns-intelbras.com.br" /></div>
-            <div style={S.formGroup}><label style={S.label}>Porta TCP</label><input style={S.input} type="number" value={port} onChange={e=>setPort(e.target.value)} placeholder="37777" /></div>
-            <div style={S.formGroup}><label style={S.label}>IP Local</label><input style={S.input} value={ip} onChange={e=>setIp(e.target.value)} /></div>
-            <div style={S.formGroup}><label style={S.label}>Localização</label><input style={S.input} value={loc} onChange={e=>setLoc(e.target.value)} /></div>
+          <>
+            <div style={S.formGrid}>
+              <div>
+                <div style={S.formGroup}><label style={S.label}>Nome *</label><input style={S.input} value={name} onChange={e=>setName(e.target.value)} /></div>
+                <div style={S.formGroup}><label style={S.label}>Tipo</label>
+                  <select style={S.input} value={type} onChange={e=>setType(e.target.value)}>
+                    <option value="camera">📷 Câmera / DVR</option>
+                    <option value="server">🖥️ Servidor</option>
+                    <option value="router">🌐 Roteador</option>
+                    <option value="switch">🔀 Switch</option>
+                  </select>
+                </div>
+                <div style={S.formGroup}><label style={S.label}>Tags</label><input style={S.input} value={tags} onChange={e=>setTags(e.target.value)} placeholder="Ex: porto, dvr" /></div>
+                <div style={S.formGroup}><label style={S.label}>Localização</label><input style={S.input} value={loc} onChange={e=>setLoc(e.target.value)} /></div>
+              </div>
+              <div>
+                <div style={S.formGroup}><label style={S.label}>DDNS / DNS (Remoto)</label><input style={S.input} value={ddns} onChange={e=>setDdns(e.target.value)} placeholder="ex: camera.ddns-intelbras.com.br" /></div>
+                <div style={S.formGroup}><label style={S.label}>Porta de Serviço (TCP)</label><input style={S.input} type="number" value={port} onChange={e=>setPort(e.target.value)} placeholder="37777" /></div>
+                <div style={S.formGroup}><label style={S.label}>IP Local</label><input style={S.input} value={ip} onChange={e=>setIp(e.target.value)} /></div>
+                <div style={{ display: "flex", gap: "20px", marginTop: "10px" }}>
+                  <label style={{ color: "#fff", fontSize: "13px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <input type="checkbox" checked={ping} onChange={e=>setPing(e.target.checked)} /> Ping/ICMP
+                  </label>
+                  <label style={{ color: "#fff", fontSize: "13px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <input type="checkbox" checked={agent} onChange={e=>setAgent(e.target.checked)} /> Agente Local
+                  </label>
+                </div>
+              </div>
+            </div>
             <div style={S.modalFoot}>
               <button onClick={onClose} style={S.cancelBtn}>Cancelar</button>
-              <button onClick={save} disabled={loading} style={S.saveBtn}>{loading ? "Salvando..." : "Salvar"}</button>
+              <button onClick={save} disabled={loading} style={S.saveBtn}>{loading ? "..." : "Salvar Alterações"}</button>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
@@ -96,8 +161,8 @@ export default function Devices() {
   return (
     <div style={S.page}>
       <div style={S.header}>
-        <h2 style={S.pageTitle}>Dispositivos</h2>
-        <button onClick={() => setModal("new")} style={S.addBtn}>+ Adicionar</button>
+        <h2 style={S.pageTitle}>📡 Dispositivos Monitorados</h2>
+        <button onClick={() => setModal("new")} style={S.addBtn}>+ Novo Dispositivo</button>
       </div>
       <div style={S.grid}>
         {devices.map(dev => (
@@ -105,13 +170,21 @@ export default function Devices() {
             <div style={S.cardHead}>
               <div style={{ flex: 1 }}>
                 <div style={S.deviceName}>{dev.name}</div>
-                <div style={S.deviceSub}>{dev.ddns_address || dev.ip_address}</div>
+                <div style={S.deviceSub}>{dev.ddns_address || dev.ip_address || "---"}</div>
               </div>
               <StatusBadge status={dev.status} lastSeen={dev.last_seen} />
             </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-              <button onClick={() => setModal(dev)} style={S.editBtn}>Editar</button>
-              <button onClick={async () => { if (confirm("Excluir?")) { await api.deleteDevice(dev.id); load(); } }} style={S.delBtn}>Excluir</button>
+            
+            <div style={S.deviceInfo}>
+              <div style={S.infoItem}><span style={S.infoLabel}>Tipo</span><span style={S.infoValue}>{dev.device_type?.toUpperCase()}</span></div>
+              <div style={S.infoItem}><span style={S.infoLabel}>Latência</span><span style={{ ...S.infoValue, color: "#10b981" }}>{dev.last_latency ? `${dev.last_latency}ms` : "---"}</span></div>
+              <div style={S.infoItem}><span style={S.infoLabel}>Local</span><span style={S.infoValue}>{dev.location || "N/A"}</span></div>
+              <div style={S.infoItem}><span style={S.infoLabel}>Porta</span><span style={S.infoValue}>{dev.monitor_port || "N/A"}</span></div>
+            </div>
+
+            <div style={S.actions}>
+              <button onClick={() => setModal(dev)} style={S.editBtn}>Configurar</button>
+              <button onClick={async () => { if (confirm("Remover?")) { await api.deleteDevice(dev.id); load(); } }} style={S.delBtn}>Remover</button>
             </div>
           </div>
         ))}
@@ -120,29 +193,3 @@ export default function Devices() {
     </div>
   );
 }
-
-const S = {
-  page: { padding: 24 },
-  header: { display: "flex", justifyContent: "space-between", marginBottom: 20 },
-  pageTitle: { fontSize: 22, fontWeight: 700, color: "#fff" },
-  addBtn: { background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", cursor: "pointer" },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 },
-  card: { background: "#13131a", border: "1px solid #1e1e2e", borderRadius: 12, padding: 20 },
-  cardHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
-  deviceName: { fontSize: 16, fontWeight: 600, color: "#fff" },
-  deviceSub: { fontSize: 12, color: "#64748b", marginTop: 4 },
-  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
-  modal: { background: "#13131a", border: "1px solid #1e1e2e", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400 },
-  modalHead: { display: "flex", justifyContent: "space-between", marginBottom: 20 },
-  modalTitle: { fontSize: 18, fontWeight: 700, color: "#fff" },
-  closeBtn: { background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 18 },
-  formGroup: { display: "flex", flexDirection: "column", gap: 6 },
-  label: { fontSize: 12, color: "#94a3b8", textTransform: "uppercase" },
-  input: { background: "#0a0a0f", border: "1px solid #1e1e2e", borderRadius: 8, padding: "10px", color: "#fff" },
-  modalFoot: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 },
-  saveBtn: { background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", cursor: "pointer" },
-  cancelBtn: { background: "transparent", border: "1px solid #1e1e2e", color: "#64748b", borderRadius: 8, padding: "10px 20px", cursor: "pointer" },
-  editBtn: { background: "#1e1e2e", border: "none", color: "#94a3b8", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer" },
-  delBtn: { background: "transparent", border: "1px solid #3f1515", color: "#f87171", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer" },
-  tokenAlert: { background: "#052e16", border: "1px solid #10b98130", borderRadius: 8, padding: 16 },
-};

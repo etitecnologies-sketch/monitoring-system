@@ -669,12 +669,12 @@ function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose 
 
         <div style={S.grid(2)}>
           <div style={S.fg}>
-            <label style={S.label}>Endereço No-IP / DDNS</label>
-            <input style={S.input} value={form.ddns_address} onChange={(e) => set("ddns_address", e.target.value)} placeholder="ex: camera1.ddns.net" />
+            <label style={S.label}>Endereço DDNS Intelbras / No-IP</label>
+            <input style={S.input} value={form.ddns_address} onChange={(e) => set("ddns_address", e.target.value)} placeholder="ex: camera1.ddns-intelbras.com.br" />
           </div>
           <div style={S.fg}>
-            <label style={S.label}>Porta de Redirecionamento</label>
-            <input style={S.input} type="number" value={form.monitor_port} onChange={(e) => set("monitor_port", e.target.value)} placeholder="ex: 8080" />
+            <label style={S.label}>Porta de Serviço (TCP)</label>
+            <input style={S.input} type="number" value={form.monitor_port} onChange={(e) => set("monitor_port", e.target.value)} placeholder="ex: 37777" />
           </div>
         </div>
 
@@ -711,17 +711,22 @@ function DevicesPage({ userRole, userClientId }) {
   const [modal, setModal] = useState(null);
   const [tokenModal, setTokenModal] = useState(null);
   const [filter, setFilter] = useState({ type: "", status: "", client: "", search: "" });
+  const [testing, setTesting] = useState(null);
 
   const load = useCallback(() => {
-    api("/devices").then(setDevices).catch(() => {});
+    api("/devices").then((data) => {
+      setDevices(Array.isArray(data) ? data : []);
+    }).catch(() => {});
     if (userRole === "superadmin") api("/clients").then(setClients).catch(() => {});
   }, [userRole]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { 
+    load(); 
+    const t = setInterval(load, 10000); 
+    return () => clearInterval(t); 
+  }, [load]);
 
-  const [testing, setTesting] = useState(null);
-
-  const del = async (id) => { if (!confirm("Remover?")) return; await api(`/devices/${id}`, { method: "DELETE" }); load(); };
+  const del = async (id) => { if (!confirm("Remover este dispositivo?")) return; await api(`/devices/${id}`, { method: "DELETE" }); load(); };
   const regenToken = async (id) => { const d = await api(`/devices/${id}/regenerate-token`, { method: "POST" }); setTokenModal(d.token); load(); };
   const testConn = async (id) => {
     setTesting(id);
@@ -744,17 +749,19 @@ function DevicesPage({ userRole, userClientId }) {
     return true;
   });
 
+  const isMobile = useIsMobile();
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
-          <div style={S.pageTitle}>🖥️ Devices</div>
-          <div style={S.pageSub}>{devices.length} device(s) cadastrado(s)</div>
+          <div style={S.pageTitle}>📡 Dispositivos</div>
+          <div style={S.pageSub}>Gerenciamento de Monitoramento Cloud & Local</div>
         </div>
-        <button style={S.btn("primary")} onClick={() => setModal("new")}>+ Novo Device</button>
+        <button style={S.btn("primary")} onClick={() => setModal("new")}>+ Novo Dispositivo</button>
       </div>
 
-      <div style={{ ...S.card, marginBottom: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ ...S.card, marginBottom: 24, display: "flex", gap: 12, flexWrap: "wrap", background: "rgba(10, 15, 26, 0.4)" }}>
         <input style={{ ...S.input, maxWidth: 200 }} placeholder="🔍 Buscar..." value={filter.search} onChange={(e) => setFilter({ ...filter, search: e.target.value })} />
         <select style={{ ...S.select, maxWidth: 150 }} value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value })}>
           <option value="">Todos os tipos</option>
@@ -771,58 +778,82 @@ function DevicesPage({ userRole, userClientId }) {
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
-        <span style={{ fontSize: 11, color: "#3a5070", alignSelf: "center" }}>{filtered.length} resultado(s)</span>
       </div>
 
-      <div style={{ ...S.card, overflowX: "auto" }}>
-        <table style={S.table}>
-          <thead>
-            <tr>{["Tipo", "Nome", "IP/DDNS", userRole === "superadmin" ? "Cliente" : null, "Status", "CPU", "Mem", "Lat", "Tags", "Ações"].filter(Boolean).map((h) => <th key={h} style={S.th}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && <tr><td colSpan={10} style={{ ...S.td, textAlign: "center", color: "#3a5070", padding: 28 }}>Nenhum device encontrado</td></tr>}
-            {filtered.map((d) => (
-              <tr key={d.id}>
-                <td style={S.td}><span title={deviceLabel(d.device_type)} style={{ fontSize: 16 }}>{deviceIcon(d.device_type)}</span></td>
-                <td style={S.td}>
-                  <div style={{ fontWeight: 700, color: "#f1f5f9" }}>{d.name}</div>
-                  <div style={{ fontSize: 9, color: "#3a5070" }}>{d.location||"—"}</div>
-                </td>
-                <td style={{ ...S.td, fontFamily: "monospace", fontSize: 10 }}>
-                  <div>{d.ip_address||"—"}</div>
-                  {d.ddns_address && <div style={{ color: "#38bdf8", marginTop: 2 }}>{d.ddns_address}:{d.monitor_port}</div>}
-                </td>
-                {userRole === "superadmin" && <td style={S.td}><span style={{ fontSize: 10, color: "#38bdf8" }}>{d.client_name||"—"}</span></td>}
-                <td style={S.td}>
-                  <span style={S.badge(d.status==="online"?"#22c55e":"#ef4444")}>{d.status==="online"?"● on":"● off"}</span>
-                  {d.status!=="online" && d.notes && (
-                    <div style={{ fontSize: 8, color: "#64748b", marginTop: 4, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis" }} title={d.notes}>
-                      {d.notes.replace("Cloud Error: ", "")}
-                    </div>
-                  )}
-                </td>
-                <td style={S.td}>{d.last_cpu!=null?`${d.last_cpu.toFixed(1)}%`:"—"}</td>
-                <td style={S.td}>{d.last_memory!=null?`${d.last_memory.toFixed(1)}%`:"—"}</td>
-                <td style={S.td}>{d.last_latency!=null?`${Math.round(d.last_latency)}ms`:"—"}</td>
-                <td style={S.td}>{(d.tags||[]).map((t) => <span key={t} style={S.tag}>#{t}</span>)}</td>
-                <td style={S.td}>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <button style={S.btnSm()} onClick={() => setModal(d)} title="Editar">✏️</button>
-                    <button style={S.btnSm()} onClick={() => testConn(d.id)} title="Testar Conexão" disabled={testing===d.id}>
-                      {testing===d.id ? "..." : "📡"}
-                    </button>
-                    <button style={S.btnSm()} onClick={() => regenToken(d.id)} title="Gerar Token">🔑</button>
-                    <button style={S.btnSm("danger")} onClick={() => del(d.id)} title="Excluir">🗑️</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(320px, 1fr))", 
+        gap: 20 
+      }}>
+        {filtered.length === 0 && (
+          <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 60, color: "#4a6080" }}>
+            Nenhum dispositivo encontrado com os filtros atuais.
+          </div>
+        )}
+        {filtered.map((d) => (
+          <div key={d.id} style={{ ...S.card, padding: 20, border: `1px solid ${d.status === "online" ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)"}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(56, 189, 248, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
+                  {deviceIcon(d.device_type)}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: "#fff", fontSize: 15 }}>{d.name}</div>
+                  <div style={{ fontSize: 10, color: "#64748b" }}>{d.location || "Sem localização"}</div>
+                </div>
+              </div>
+              <span style={S.badge(d.status === "online" ? "#22c55e" : "#ef4444")}>
+                {d.status === "online" ? "● Online" : "● Offline"}
+              </span>
+            </div>
+
+            <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 10, color: "#4a6080" }}>ENDEREÇO</span>
+                <span style={{ fontSize: 10, color: "#e2e8f0", fontFamily: "monospace" }}>{d.ddns_address || d.ip_address || "—"}</span>
+              </div>
+              {d.monitor_port > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 10, color: "#4a6080" }}>PORTA</span>
+                  <span style={{ fontSize: 10, color: "#38bdf8", fontWeight: 700 }}>{d.monitor_port}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 10, color: "#4a6080" }}>LATÊNCIA</span>
+                <span style={{ fontSize: 10, color: "#22c55e", fontWeight: 700 }}>{d.last_latency ? `${Math.round(d.last_latency)}ms` : "—"}</span>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 16, minHeight: 24 }}>
+              {(d.tags || []).map((t) => <span key={t} style={{ ...S.tag, margin: 0 }}>#{t}</span>)}
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ ...S.btnSm(), flex: 1 }} onClick={() => setModal(d)}>✏️ EDITAR</button>
+              <button style={{ ...S.btnSm(), flex: 1 }} onClick={() => testConn(d.id)} disabled={testing === d.id}>
+                {testing === d.id ? "..." : "📡 TESTAR"}
+              </button>
+              <div style={{ position: "relative" }}>
+                <button style={S.btnSm()} onClick={() => {
+                  const el = document.getElementById(`menu-${d.id}`);
+                  el.style.display = el.style.display === "none" ? "block" : "none";
+                }}>⋮</button>
+                <div id={`menu-${d.id}`} style={{ 
+                  display: "none", position: "absolute", bottom: "100%", right: 0, 
+                  background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", 
+                  borderRadius: 8, padding: 4, zIndex: 10, boxShadow: "0 10px 20px rgba(0,0,0,0.5)" 
+                }}>
+                  <button style={{ ...S.btnSm(), display: "block", width: "100%", textAlign: "left", marginBottom: 4 }} onClick={() => regenToken(d.id)}>🔑 TOKEN</button>
+                  <button style={{ ...S.btnSm("danger"), display: "block", width: "100%", textAlign: "left" }} onClick={() => del(d.id)}>🗑️ EXCLUIR</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {(modal==="new"||(modal&&modal.id)) && (
-        <DeviceModal device={modal==="new"?null:modal} clients={clients} userRole={userRole} userClientId={userClientId}
+      {(modal === "new" || (modal && modal.id)) && (
+        <DeviceModal device={modal === "new" ? null : modal} clients={clients} userRole={userRole} userClientId={userClientId}
           onSave={() => { load(); setModal(null); }} onClose={() => setModal(null)} />
       )}
       {tokenModal && (
@@ -846,15 +877,18 @@ function Dashboard({ userRole }) {
   const [alerts, setAlerts] = useState([]);
   const [clients, setClients] = useState([]);
 
-  useEffect(() => {
-    const load = () => {
-      api("/stats").then(setStats).catch(() => {});
-      api("/devices").then(setDevices).catch(() => {});
-      api("/alerts").then(setAlerts).catch(() => {});
-      if (userRole === "superadmin") api("/clients").then(setClients).catch(() => {});
-    };
-    load(); const t = setInterval(load, 10000); return () => clearInterval(t);
+  const load = useCallback(() => {
+    api("/stats").then(setStats).catch(() => {});
+    api("/devices").then(setDevices).catch(() => {});
+    api("/alerts").then(setAlerts).catch(() => {});
+    if (userRole === "superadmin") api("/clients").then(setClients).catch(() => {});
   }, [userRole]);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, [load]);
 
   const byType = DEVICE_TYPES.map((t) => ({ ...t, count: devices.filter((d) => d.device_type === t.value).length })).filter((t) => t.count > 0);
 
@@ -940,7 +974,7 @@ function Dashboard({ userRole }) {
           gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(220px, 1fr))", 
           gap: 15 
         }}>
-          {devices.filter((d) => d.status==="online" && d.last_cpu!=null).slice(0,12).map((d) => (
+          {devices.filter((d) => d.status==="online").slice(0,12).map((d) => (
             <div key={d.id} style={{ 
               background: "rgba(255,255,255,0.02)", 
               border: "1px solid rgba(255,255,255,0.05)", 
@@ -964,18 +998,27 @@ function Dashboard({ userRole }) {
               </div>
               
               <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#94a3b8", marginBottom: 4 }}>
-                    <span>CPU</span><span style={{ color: "#38bdf8" }}>{(d.last_cpu||0).toFixed(0)}%</span>
+                {d.last_cpu != null ? (
+                  <>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#94a3b8", marginBottom: 4 }}>
+                        <span>CPU</span><span style={{ color: "#38bdf8" }}>{(d.last_cpu||0).toFixed(0)}%</span>
+                      </div>
+                      <Bar value={d.last_cpu} color="#38bdf8" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#94a3b8", marginBottom: 4 }}>
+                        <span>RAM</span><span style={{ color: "#a78bfa" }}>{(d.last_memory||0).toFixed(0)}%</span>
+                      </div>
+                      <Bar value={d.last_memory} color="#a78bfa" />
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ flex: 1, textAlign: "center", padding: "10px 0", background: "rgba(0,0,0,0.1)", borderRadius: 6 }}>
+                    <div style={{ fontSize: 10, color: "#38bdf8", fontWeight: 700 }}>CLOUD MONITOR</div>
+                    <div style={{ fontSize: 8, color: "#4a6080" }}>MODO ONLINE ATIVO</div>
                   </div>
-                  <Bar value={d.last_cpu} color="#38bdf8" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#94a3b8", marginBottom: 4 }}>
-                    <span>RAM</span><span style={{ color: "#a78bfa" }}>{(d.last_memory||0).toFixed(0)}%</span>
-                  </div>
-                  <Bar value={d.last_memory} color="#a78bfa" />
-                </div>
+                )}
               </div>
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
@@ -985,9 +1028,9 @@ function Dashboard({ userRole }) {
             </div>
           ))}
         </div>
-        {devices.filter((d) => d.status==="online" && d.last_cpu!=null).length === 0 && (
+        {devices.filter((d) => d.status==="online").length === 0 && (
           <div style={{ textAlign: "center", padding: "40px 0", color: "#3a5070", fontSize: 12 }}>
-            Aguardando métricas dos dispositivos...
+            Aguardando dispositivos ficarem online...
           </div>
         )}
       </div>
