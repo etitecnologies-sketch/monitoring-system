@@ -923,6 +923,37 @@ app.get("/solar/summary", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Rota de teste manual para o botão no frontend
+app.post("/devices/:id/test", auth, async (req, res) => {
+  try {
+    const dr = await pool.query("SELECT ddns_address, monitor_port FROM devices WHERE id=$1", [req.params.id]);
+    if (dr.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+    
+    const { ddns_address, monitor_port } = dr.rows[0];
+    if (!ddns_address || !monitor_port) return res.status(400).json({ error: "DDNS e Porta não configurados" });
+
+    const socket = new net.Socket();
+    socket.setTimeout(5000);
+    
+    socket.on("connect", () => {
+      socket.destroy();
+      res.json({ alive: true, message: "Conexão estabelecida com sucesso!" });
+    });
+
+    socket.on("timeout", () => {
+      socket.destroy();
+      res.json({ alive: false, message: "Tempo esgotado. A porta parece estar fechada no seu roteador." });
+    });
+
+    socket.on("error", (err) => {
+      socket.destroy();
+      res.json({ alive: false, message: `Erro de conexão: ${err.code}` });
+    });
+
+    socket.connect(monitor_port, ddns_address);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 404 Handler ──────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ 
@@ -1049,37 +1080,6 @@ async function cloudMonitor(deviceId = null) {
     logger("ERROR", `[CloudMonitor] Erro: ${e.message}`);
   }
 }
-
-// Rota de teste manual para o botão no frontend
-app.post("/devices/:id/test", auth, async (req, res) => {
-  try {
-    const dr = await pool.query("SELECT ddns_address, monitor_port FROM devices WHERE id=$1", [req.params.id]);
-    if (dr.rows.length === 0) return res.status(404).json({ error: "Device not found" });
-    
-    const { ddns_address, monitor_port } = dr.rows[0];
-    if (!ddns_address || !monitor_port) return res.status(400).json({ error: "DDNS e Porta não configurados" });
-
-    const socket = new net.Socket();
-    socket.setTimeout(5000);
-    
-    socket.on("connect", () => {
-      socket.destroy();
-      res.json({ alive: true, message: "Conexão estabelecida com sucesso!" });
-    });
-
-    socket.on("timeout", () => {
-      socket.destroy();
-      res.json({ alive: false, message: "Tempo esgotado. A porta parece estar fechada no seu roteador." });
-    });
-
-    socket.on("error", (err) => {
-      socket.destroy();
-      res.json({ alive: false, message: `Erro de conexão: ${err.code}` });
-    });
-
-    socket.connect(monitor_port, ddns_address);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
 
 // Inicia o monitoramento a cada 1 minuto
 setInterval(cloudMonitor, 60000);

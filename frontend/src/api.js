@@ -182,6 +182,11 @@ export const api = {
       method: "POST",
     }),
 
+  testDevice: (id) =>
+    apiFetch(`/devices/${id}/test`, {
+      method: "POST",
+    }),
+
   // Hosts and Metrics
   hosts: () =>
     apiFetch("/hosts"),

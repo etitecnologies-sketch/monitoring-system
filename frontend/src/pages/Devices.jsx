@@ -76,16 +76,71 @@ function DeviceModal({ device, onClose, onSave }) {
   const [name, setName]     = useState(device?.name || "");
   const [desc, setDesc]     = useState(device?.description || "");
   const [loc, setLoc]       = useState(device?.location || "");
+  const [type, setType]     = useState(device?.device_type || "server");
+  const [ip, setIp]         = useState(device?.ip_address || "");
+  const [ddns, setDdns]     = useState(device?.ddns_address || "");
+  const [port, setPort]     = useState(device?.monitor_port || "");
+  const [ping, setPing]     = useState(device?.monitor_ping !== false);
+  const [agent, setAgent]   = useState(device?.monitor_agent !== false);
+  
   const [loading, setLoading] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
   const [newToken, setNewToken] = useState(null);
+
+  const deviceTypes = [
+    { value: "server", label: "Servidor", icon: "🖥️" },
+    { value: "camera", label: "Câmera IP / DVR", icon: "📷" },
+    { value: "router", label: "Roteador", icon: "🌐" },
+    { value: "switch", label: "Switch", icon: "🔀" },
+    { value: "other", label: "Outro", icon: "📦" },
+  ];
 
   async function save() {
     if (!name.trim()) return;
     setLoading(true);
-    const data = { name: name.trim(), description: desc, location: loc };
-    if (device) await api.updateDevice(device.id, data);
-    else { const res = await api.createDevice(data); setNewToken(res.token); onSave(res); setLoading(false); return; }
-    onSave(); setLoading(false);
+    const data = { 
+      name: name.trim(), 
+      description: desc, 
+      location: loc,
+      device_type: type,
+      ip_address: ip,
+      ddns_address: ddns,
+      monitor_port: parseInt(port) || 0,
+      monitor_ping: ping,
+      monitor_agent: agent
+    };
+    
+    try {
+      if (device) {
+        await api.updateDevice(device.id, data);
+      } else {
+        const res = await api.createDevice(data);
+        setNewToken(res.token);
+        onSave(res);
+        setLoading(false);
+        return;
+      }
+      onSave();
+    } catch (err) {
+      alert("Erro ao salvar: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function testConn() {
+    if (!ddns || !port) return alert("Configure DDNS e Porta para testar");
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await api.testDevice(device.id);
+      setTestResult(res);
+    } catch (err) {
+      setTestResult({ alive: false, message: err.message });
+    } finally {
+      setTesting(false);
+    }
   }
 
   async function regenToken() {
@@ -96,9 +151,9 @@ function DeviceModal({ device, onClose, onSave }) {
 
   return (
     <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div style={S.modal}>
+      <div style={{...S.modal, maxWidth: 600}}>
         <div style={S.modalHead}>
-          <span style={S.modalTitle}>{device ? "Edit device" : "Add new device"}</span>
+          <span style={S.modalTitle}>{device ? `Edit: ${device.name}` : "Add new device"}</span>
           <button onClick={onClose} style={S.closeBtn}>✕</button>
         </div>
 
@@ -114,24 +169,92 @@ function DeviceModal({ device, onClose, onSave }) {
           </div>
         )}
 
-        <div style={S.formGroup}>
-          <label style={S.label}>Device name *</label>
-          <input style={S.input} value={name} onChange={e=>setName(e.target.value)}
-            placeholder="e.g. Production Server #1" />
-        </div>
-        <div style={S.formGroup}>
-          <label style={S.label}>Description</label>
-          <input style={S.input} value={desc} onChange={e=>setDesc(e.target.value)}
-            placeholder="e.g. Main web server — São Paulo" />
-        </div>
-        <div style={S.formGroup}>
-          <label style={S.label}>Location</label>
-          <input style={S.input} value={loc} onChange={e=>setLoc(e.target.value)}
-            placeholder="e.g. Brazil / AWS us-east-1" />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
+            <div style={S.formGroup}>
+              <label style={S.label}>Device name *</label>
+              <input style={S.input} value={name} onChange={e=>setName(e.target.value)}
+                placeholder="e.g. Camera Portaria" />
+            </div>
+            <div style={S.formGroup}>
+              <label style={S.label}>Type</label>
+              <select style={S.input} value={type} onChange={e=>setType(e.target.value)}>
+                {deviceTypes.map(t => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
+              </select>
+            </div>
+            <div style={S.formGroup}>
+              <label style={S.label}>Location</label>
+              <input style={S.input} value={loc} onChange={e=>setLoc(e.target.value)}
+                placeholder="e.g. Portaria Principal" />
+            </div>
+            <div style={S.formGroup}>
+              <label style={S.label}>Description</label>
+              <input style={S.input} value={desc} onChange={e=>setDesc(e.target.value)}
+                placeholder="e.g. Intelbras VIP 1230" />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
+            <div style={S.formGroup}>
+              <label style={S.label}>IP Local (Opcional)</label>
+              <input style={S.input} value={ip} onChange={e=>setIp(e.target.value)}
+                placeholder="192.168.1.10" />
+            </div>
+            <div style={S.formGroup}>
+              <label style={S.label}>DDNS / DNS (Remoto)</label>
+              <input style={S.input} value={ddns} onChange={e=>setDdns(e.target.value)}
+                placeholder="ex: minha-casa.ddns-intelbras.com.br" />
+            </div>
+            <div style={S.formGroup}>
+              <label style={S.label}>Porta de Monitoramento (TCP)</label>
+              <input style={S.input} type="number" value={port} onChange={e=>setPort(e.target.value)}
+                placeholder="80, 37777, 8000" />
+              <small style={{fontSize: 10, color: "#64748b"}}>Porta TCP aberta no roteador (NAT)</small>
+            </div>
+            
+            <div style={{ display: "flex", gap: 15, marginTop: 10 }}>
+              <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, cursor: "pointer", textTransform: "none" }}>
+                <input type="checkbox" checked={ping} onChange={e=>setPing(e.target.checked)} />
+                Monitorar Ping
+              </label>
+              <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, cursor: "pointer", textTransform: "none" }}>
+                <input type="checkbox" checked={agent} onChange={e=>setAgent(e.target.checked)} />
+                Monitorar Agente
+              </label>
+            </div>
+          </div>
         </div>
 
+        {device && (
+          <div style={{ borderTop: "1px solid #1e1e2e", paddingTop: 15 }}>
+             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <label style={S.label}>Conexão Cloud</label>
+                <button 
+                  onClick={testConn} 
+                  disabled={testing || !ddns || !port}
+                  style={{...S.editBtn, background: "#10b98120", borderColor: "#10b98140", color: "#10b981"}}
+                >
+                  {testing ? "Testando..." : "⚡ Testar Conexão Agora"}
+                </button>
+             </div>
+             {testResult && (
+               <div style={{ 
+                 marginTop: 10, 
+                 padding: 10, 
+                 borderRadius: 8, 
+                 fontSize: 12,
+                 background: testResult.alive ? "#064e3b" : "#450a0a",
+                 color: testResult.alive ? "#34d399" : "#f87171",
+                 border: `1px solid ${testResult.alive ? "#05966940" : "#dc262640"}`
+               }}>
+                 {testResult.alive ? "✅ " : "❌ "} {testResult.message}
+               </div>
+             )}
+          </div>
+        )}
+
         {device && !newToken && (
-          <div style={S.formGroup}>
+          <div style={{ borderTop: "1px solid #1e1e2e", paddingTop: 15 }}>
             <label style={S.label}>Agent token</label>
             <TokenBox token={device.token || "hidden"} />
             <button onClick={regenToken} style={S.regenBtn}>🔄 Regenerate token</button>

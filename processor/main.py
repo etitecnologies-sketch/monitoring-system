@@ -137,21 +137,47 @@ def collect_snmp(ip, community, version="2c"):
 
 def check_ping_devices(cur, conn):
     cur.execute("""SELECT id,name,ip_address,device_type,tags,status,
-        snmp_community,snmp_version,monitor_snmp,hostname,client_id
-        FROM devices WHERE ip_address IS NOT NULL AND ip_address!='' AND monitor_ping=TRUE""")
+        snmp_community,snmp_version,monitor_snmp,hostname,client_id,ddns_address,monitor_port
+        FROM devices WHERE (ip_address IS NOT NULL AND ip_address!='' AND monitor_ping=TRUE)
+        OR (ddns_address IS NOT NULL AND ddns_address!='' AND monitor_port > 0)""")
     devices=cur.fetchall()
     if not devices: return
 
     def check_one(dev):
-        dev_id,dev_name,ip,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id=dev
-        alive,latency=ping(ip,PING_TIMEOUT)
-        return dev_id,dev_name,ip,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency
+        dev_id,dev_name,ip,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,ddns,port=dev
+        
+        alive = False
+        latency = 0
+        method = "NONE"
+        
+        # 1. Tenta DDNS se disponível
+        if ddns and port:
+            import socket
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(PING_TIMEOUT)
+                start = time.time()
+                result = s.connect_ex((ddns, int(port)))
+                latency = round((time.time() - start) * 1000, 1)
+                s.close()
+                if result == 0:
+                    alive = True
+                    method = f"TCP:{port}"
+            except:
+                pass
+                
+        # 2. Se não funcionou DDNS ou não tem, tenta Ping se tiver IP
+        if not alive and ip:
+            alive, latency = ping(ip, PING_TIMEOUT)
+            method = "PING"
+
+        return dev_id,dev_name,ip or ddns,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
         results=list(ex.map(check_one,devices))
 
     for r in results:
-        dev_id,dev_name,ip,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency=r
+        dev_id,dev_name,target,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method=r
         d_icon=device_icon(dtype)
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
@@ -167,7 +193,7 @@ def check_ping_devices(cur, conn):
             except: conn.rollback()
             if latency>0:
                 try:
-                    hl=hostname or ip or dev_name
+                    hl=hostname or target or dev_name
                     cur.execute("INSERT INTO hosts(name) VALUES(%s) ON CONFLICT(name) DO UPDATE SET name=EXCLUDED.name",(hl,))
                     cur.execute("""INSERT INTO metrics(time,host_id,host,device_id,cpu,memory,disk_used,
                         disk_total,disk_percent,net_rx_bytes,net_tx_bytes,latency_ms,uptime_seconds,load_avg,processes,temperature)
@@ -175,53 +201,40 @@ def check_ping_devices(cur, conn):
                         (hl,hl,dev_id,latency))
                     conn.commit()
                 except Exception as e: logger.debug(f"Ping metric: {e}"); conn.rollback()
-            if do_snmp and sc:
-                try:
-                    sd=collect_snmp(ip,sc,sv or "2c")
-                    if sd:
-                        hl=hostname or ip or dev_name
-                        cur.execute("""INSERT INTO metrics(time,host_id,host,device_id,cpu,memory,disk_used,
-                            disk_total,disk_percent,net_rx_bytes,net_tx_bytes,latency_ms,uptime_seconds,load_avg,processes,temperature)
-                            VALUES(NOW(),(SELECT id FROM hosts WHERE name=%s),%s,%s,%s,%s,0,0,0,0,0,%s,%s,0,0,0)""",
-                            (hl,hl,dev_id,sd.get("cpu",0),sd.get("memory",0),latency,sd.get("uptime_seconds",0)))
-                        conn.commit()
-                except Exception as e: logger.debug(f"SNMP: {e}"); conn.rollback()
-
-        client_suffix = f"\n🏢 Cliente: <b>{cl_name}</b>" if cl_name else ""
 
         if alive and was_down:
             ping_state[dev_id]=False
-            logger.info(f"PING ONLINE: {dev_name} ({ip})")
+            logger.info(f"DEVICE ONLINE: {dev_name} ({target}) via {method}")
             msg=(f"✅ {dev_name}\n"
-                 f"Normalizado: IP: {ip} está respondendo ao ping\n"
+                 f"Normalizado: {target} está respondendo via {method}\n"
                  f"Host: {dev_name}\n"
                  f"Data da Normalização: {now_str()}\n"
-                 f"Detalhes do Equipamento: {d_icon} {dtype or 'other'} — Ping: {latency:.0f}ms\n"
+                 f"Detalhes do Equipamento: {d_icon} {dtype or 'other'} — Latência: {latency:.0f}ms\n"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
                  +(f"Tags: {tags_str}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
-                f"Device '{dev_name}' voltou ONLINE.\nIP: {ip}\nPing: {latency:.0f}ms\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
+                f"Device '{dev_name}' voltou ONLINE.\nAlvo: {target}\nMétodo: {method}\nLatência: {latency:.0f}ms\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
 
         elif not alive and not was_down:
             ping_state[dev_id]=True
-            logger.warning(f"PING OFFLINE: {dev_name} ({ip})")
+            logger.warning(f"DEVICE OFFLINE: {dev_name} ({target})")
             try:
-                cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'ping_offline',1,0,'offline',%s)",(dev_id,ip or dev_name,client_id))
+                cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'offline',1,0,'offline',%s)",(dev_id,target or dev_name,client_id))
                 cur.execute("UPDATE devices SET status='offline' WHERE id=%s",(dev_id,))
                 conn.commit()
-            except Exception as e: logger.error(f"Ping alert: {e}"); conn.rollback()
+            except Exception as e: logger.error(f"Alert: {e}"); conn.rollback()
             msg=(f"❌ {dev_name}\n"
-                 f"Problema: IP: {ip} está indisponível via ICMP\n"
+                 f"Problema: {target} está indisponível\n"
                  f"Host: {dev_name}\n"
                  f"Data do Evento: {now_str()}\n"
                  f"Detalhes do Equipamento: {d_icon} {dtype or 'other'}\n"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
                  +(f"Tags: {tags_str}\n" if tags_str else "")
-                 +"Indicação: Last three attempts returned timeout. Please check device connectivity.")
+                 +"Indicação: Verifique a conectividade e o redirecionamento de portas.")
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
-                f"Device '{dev_name}' ficou OFFLINE.\nIP: {ip}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
+                f"Device '{dev_name}' ficou OFFLINE.\nAlvo: {target}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
 
 def check_offline_devices(cur, conn):
     cur.execute("SELECT id,name,hostname,last_seen,status,device_type,tags,client_id FROM devices WHERE monitor_agent=TRUE")

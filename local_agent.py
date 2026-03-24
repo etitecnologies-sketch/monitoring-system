@@ -15,23 +15,38 @@ def get_hostname():
     return socket.gethostname()
 
 def check_port(host, port):
-    """Verifica se uma porta TCP está aberta (útil para No-IP/Câmeras)"""
+    """Verifica se uma porta TCP está aberta (útil para No-IP/Câmeras/Intelbras)"""
     try:
+        # Tenta resolver o DNS antes para dar um log mais preciso
+        try:
+            ip = socket.gethostbyname(host)
+            logger.debug(f"🔍 DNS Resolvido: {host} -> {ip}")
+        except socket.gaierror:
+            return False, 0, "DNS_ERROR"
+
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(2)
+        s.settimeout(5) # Aumentado para 5s para conexões remotas instáveis
         start = time.time()
         result = s.connect_ex((host, int(port)))
         latency = round((time.time() - start) * 1000, 2)
         s.close()
-        return result == 0, latency
-    except:
-        return False, 0
+        
+        error_type = None
+        if result != 0:
+            if result == 10061: error_type = "REFUSED"
+            elif result == 10060: error_type = "TIMEOUT"
+            else: error_type = f"ERR_{result}"
+            
+        return result == 0, latency, error_type
+    except Exception as e:
+        return False, 0, str(e)
 
 def ping_device(ip):
     try:
         # Comando de ping para Windows (-n 1) ou Linux (-c 1)
         param = "-n" if os.name == "nt" else "-c"
-        command = ["ping", param, "1", "-w", "2000", ip]
+        # -w 3000 aumenta o timeout para 3 segundos
+        command = ["ping", param, "1", "-w", "3000", ip]
         start = time.time()
         result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         latency = round((time.time() - start) * 1000, 2)
@@ -65,17 +80,22 @@ def collect_local_metrics(devices_to_check):
         lat = 0
         method = "UNKNOWN"
         target = "N/A"
+        error_detail = ""
 
-        # Tenta primeiro por DDNS se estiver configurado
+        # 1. Tenta primeiro por DDNS se estiver configurado
         if dev.get("ddns_address") and dev.get("monitor_port"):
             target = dev["ddns_address"]
             port = dev["monitor_port"]
-            alive, lat = check_port(target, port)
+            alive, lat, err = check_port(target, port)
             method = f"TCP:{port}"
+            
             if not alive:
-                logger.warning(f"⚠️ DDNS {target}:{port} falhou. Tentando IP Local...")
+                error_detail = f" (Erro: {err})" if err else ""
+                logger.warning(f"⚠️ DDNS {target}:{port} falhou{error_detail}. Verifique o redirecionamento de porta no roteador.")
+                if "DNS_ERROR" in str(err):
+                    logger.error(f"❌ Erro de DNS: Não foi possível resolver o endereço {target}. Verifique se o DDNS Intelbras está ativo.")
 
-        # Se o DDNS falhou ou não existe, tenta pelo IP Local (Ping)
+        # 2. Se o DDNS falhou ou não existe, tenta pelo IP Local (Ping)
         if not alive and dev.get("ip_address") and dev.get("monitor_ping"):
             target = dev["ip_address"]
             alive, lat = ping_device(target)
@@ -98,15 +118,17 @@ def collect_local_metrics(devices_to_check):
             }
             send_to_api(status_data)
         else:
-            logger.warning(f"❌ {dev['name']} ({target}) [{method}] está OFFLINE!")
-            status_data = {
-                "host": f"DEVICE_{safe_host_id}",
-                "device_id": dev["id"],
-                "latency_ms": 0,
-                "status": "offline",
-                "cpu": 0, "memory": 0
-            }
-            send_to_api(status_data)
+            # Só reporta offline se realmente tentou algum método
+            if method != "UNKNOWN":
+                logger.warning(f"❌ {dev['name']} ({target}) [{method}] está OFFLINE!{error_detail}")
+                status_data = {
+                    "host": f"DEVICE_{safe_host_id}",
+                    "device_id": dev["id"],
+                    "latency_ms": 0,
+                    "status": "offline",
+                    "cpu": 0, "memory": 0
+                }
+                send_to_api(status_data)
             
     return metrics
 
