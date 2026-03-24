@@ -1,8 +1,10 @@
 // ── Config ────────────────────────────────────────────────
-// Tenta usar a variável de ambiente, senão usa URL relativa (que o Nginx fará o proxy)
-const API_BASE = import.meta.env.VITE_API_URL || "";
+const rawApiBase = import.meta.env.VITE_API_URL || "";
+const rawWsUrl = import.meta.env.VITE_WS_URL || "";
 
-const WS_URL = import.meta.env.VITE_WS_URL || 
+// Limpa aspas e espaços que podem vir do Railway
+const API_BASE = rawApiBase.replace(/["']/g, "").trim();
+const WS_URL = rawWsUrl.replace(/["']/g, "").trim() || 
   (window.location.hostname === "localhost" ? "http://localhost:3001" : 
   `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}/socket.io`);
 
