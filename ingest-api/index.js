@@ -220,15 +220,18 @@ app.post("/devices/:id/regenerate-token", auth, async (req, res) => {
 
 app.post("/devices/:id/test", auth, async (req, res) => {
   try {
-    const dr = await pool.query("SELECT ddns_address, monitor_port FROM devices WHERE id=$1", [req.params.id]);
-    const { ddns_address, monitor_port } = dr.rows[0];
-    if (!ddns_address || !monitor_port) return res.status(400).json({ error: "DDNS/Port not set" });
+    const dr = await pool.query("SELECT ip_address, ddns_address, monitor_port FROM devices WHERE id=$1", [req.params.id]);
+    const { ip_address, ddns_address, monitor_port } = dr.rows[0];
+    const targetHost = ddns_address || ip_address;
+    
+    if (!targetHost || !monitor_port) return res.status(400).json({ error: "Endereço (IP/DDNS) ou Porta não configurados" });
+    
     const socket = new net.Socket();
     socket.setTimeout(8000);
-    socket.on("connect", () => { socket.destroy(); res.json({ alive: true, message: "Conectado!" }); });
-    socket.on("timeout", () => { socket.destroy(); res.json({ alive: false, message: "Timeout." }); });
-    socket.on("error", (err) => { socket.destroy(); res.json({ alive: false, message: `Erro: ${err.code}` }); });
-    socket.connect(monitor_port, ddns_address);
+    socket.on("connect", () => { socket.destroy(); res.json({ alive: true, message: `Conectado com sucesso em ${targetHost}:${monitor_port}!` }); });
+    socket.on("timeout", () => { socket.destroy(); res.json({ alive: false, message: `Timeout ao tentar conectar em ${targetHost}:${monitor_port}.` }); });
+    socket.on("error", (err) => { socket.destroy(); res.json({ alive: false, message: `Erro de conexão (${err.code}) em ${targetHost}:${monitor_port}.` }); });
+    socket.connect(monitor_port, targetHost);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
