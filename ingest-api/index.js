@@ -1002,6 +1002,393 @@ app.post("/devices/:id/test", auth, async (req, res) => {
   }
 });
 
+// --- MONITORAMENTO CLOUD (SEM AGENTE) ---
+async function cloudMonitor(deviceId = null) {
+  try {
+    const queryStr = deviceId 
+      ? "SELECT id, name, client_id, ddns_address, monitor_port FROM devices WHERE id=$1"
+      : "SELECT id, name, client_id, ddns_address, monitor_port FROM devices WHERE ddns_address <> '' AND monitor_port > 0";
+    const queryParams = deviceId ? [deviceId] : [];
+    
+    const r = await pool.query(queryStr, queryParams);
+    if (r.rows.length === 0) return;
+
+    // Função interna para checar um único dispositivo
+    const checkOne = async (dev) => {
+      const { id, name, client_id, ddns_address, monitor_port } = dev;
+      if (!ddns_address || !monitor_port) return;
+
+      const check = () => new Promise((resolve) => {
+        const socket = new net.Socket();
+        const start = Date.now();
+        socket.setTimeout(5000);
+
+        socket.on("connect", () => {
+          const lat = Date.now() - start;
+          socket.destroy();
+          resolve({ alive: true, lat, error: null });
+        });
+
+        socket.on("timeout", () => {
+          socket.destroy();
+          resolve({ alive: false, lat: 0, error: "TIMEOUT" });
+        });
+
+        socket.on("error", (err) => {
+          socket.destroy();
+          let msg = err.code;
+          if (err.code === "ECONNREFUSED") msg = "REFUSED";
+          if (err.code === "ENOTFOUND") msg = "NOTFOUND";
+          resolve({ alive: false, lat: 0, error: msg });
+        });
+
+        socket.connect(monitor_port, ddns_address);
+      });
+
+      const result = await check();
+      const status = result.alive ? 'online' : 'offline';
+      const errorMsg = result.error || "";
+      
+      // 1. Atualiza status no banco
+      await pool.query(
+        "UPDATE devices SET last_seen=NOW(), status=$1, notes=LEFT($2, 200) WHERE id=$3",
+        [status, errorMsg ? `Cloud Error: ${errorMsg}` : "", id]
+      );
+
+      // 2. Garante que o host existe na tabela hosts
+      const hr = await pool.query(
+        "INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id",
+        [name]
+      );
+
+      // 3. Registra métrica básica
+      await pool.query(`
+        INSERT INTO metrics (time, host_id, host, device_id, cpu, memory, latency_ms, status)
+        VALUES (NOW(), $1, $2, $3, 0, 0, $4, $5)
+      `, [hr.rows[0].id, name, id, result.lat, status]);
+
+      // 4. Envia atualização via WebSocket (em segundo plano)
+      fetch(`${WEBSOCKET_URL}/publish`, {
+        method: "POST", 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          host: name, cpu: 0, memory: 0, 
+          latency_ms: result.lat, device_id: id, 
+          client_id: client_id, status: status,
+          error: errorMsg, time: new Date().toISOString() 
+        }),
+      }).catch(() => {});
+
+      if (result.alive) {
+        logger("INFO", `[CloudMonitor] ✓ ${name} (${ddns_address}:${monitor_port}) ONLINE`);
+      } else {
+        logger("WARN", `[CloudMonitor] ❌ ${name} (${ddns_address}:${monitor_port}) OFFLINE: ${errorMsg}`);
+      }
+    };
+
+    if (deviceId) {
+      await checkOne(r.rows[0]);
+    } else {
+      await Promise.all(r.rows.map(dev => checkOne(dev)));
+    }
+  } catch (e) {
+    logger("ERROR", `[CloudMonitor] Erro: ${e.message}`);
+  }
+}
+
+// Inicia o monitoramento a cada 1 minuto
+setInterval(cloudMonitor, 60000);
+// Executa a primeira vez após 10 segundos do boot
+setTimeout(cloudMonitor, 10000);
+
+app.post("/devices", auth, async (req, res) => {
+  const {
+    name, description, location, device_type, ip_address, tags,
+    snmp_community, snmp_version, ssh_user, ssh_port,
+    monitor_ping, monitor_snmp, monitor_agent, ddns_address, monitor_port, notes, client_id,
+  } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+
+  const cid = req.user.role === "superadmin" ? (client_id || null) : req.user.client_id;
+  const token = crypto.randomBytes(32).toString("hex");
+
+  try {
+    const r = await pool.query(`
+      INSERT INTO devices (name, description, location, token, device_type, ip_address, tags,
+        snmp_community, snmp_version, ssh_user, ssh_port, monitor_ping, monitor_snmp,
+        monitor_agent, ddns_address, monitor_port, notes, client_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *
+    `, [name, description||"", location||"", token, device_type||"other", ip_address||null,
+        tags||[], snmp_community||"public", snmp_version||"2c", ssh_user||null, ssh_port||22,
+        monitor_ping!==false, monitor_snmp||false, monitor_agent!==false, ddns_address||"",
+        parseInt(monitor_port)||0, notes||"", cid]);
+
+    res.status(201).json(r.rows[0]);
+
+    if (ddns_address && monitor_port) {
+      setImmediate(() => cloudMonitor(r.rows[0].id).catch(err => logger("ERROR", "Background Monitor Error", err)));
+    }
+  } catch (e) { 
+    logger("ERROR", "Create Device Error", e);
+    if (!res.headersSent) res.status(500).json({ error: e.message }); 
+  }
+});
+
+app.put("/devices/:id", auth, async (req, res) => {
+  const {
+    name, description, location, device_type, ip_address, tags,
+    snmp_community, snmp_version, ssh_user, ssh_port,
+    monitor_ping, monitor_snmp, monitor_agent, ddns_address, monitor_port, notes,
+  } = req.body;
+  
+  logger("INFO", "Updating device", { id: req.params.id, name });
+
+  try {
+    const r = await pool.query(`
+      UPDATE devices SET name=$1, description=$2, location=$3, device_type=$4,
+        ip_address=$5, tags=$6, snmp_community=$7, snmp_version=$8, ssh_user=$9,
+        ssh_port=$10, monitor_ping=$11, monitor_snmp=$12, monitor_agent=$13,
+        ddns_address=$14, monitor_port=$15, notes=$16
+      WHERE id=$17 RETURNING *
+    `, [name, description||"", location||"", device_type||"other", ip_address||null,
+        tags||[], snmp_community||"public", snmp_version||"2c", ssh_user||null,
+        ssh_port||22, monitor_ping!==false, monitor_snmp||false,
+        monitor_agent!==false, ddns_address||"", parseInt(monitor_port)||0,
+        notes||"", req.params.id]);
+
+    if (r.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+
+    res.json(r.rows[0]);
+
+    if (ddns_address && monitor_port) {
+      setImmediate(() => cloudMonitor(r.rows[0].id).catch(err => logger("ERROR", "Background Monitor Error", err)));
+    }
+  } catch (e) { 
+    logger("ERROR", "Update Device Error", { id: req.params.id, error: e.message });
+    if (!res.headersSent) res.status(500).json({ error: e.message }); 
+  }
+});
+
+app.delete("/devices/:id", auth, async (req, res) => {
+  await pool.query("DELETE FROM devices WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
+});
+
+app.post("/devices/:id/regenerate-token", auth, async (req, res) => {
+  const token = crypto.randomBytes(32).toString("hex");
+  const r = await pool.query("UPDATE devices SET token=$1 WHERE id=$2 RETURNING token", [token, req.params.id]);
+  res.json({ token: r.rows[0].token });
+});
+
+// ── Tags & Types ──────────────────────────────────────────────
+app.get("/tags", auth, async (req, res) => {
+  const cid = clientFilter(req);
+  let query = "SELECT DISTINCT unnest(tags) as tag FROM devices";
+  const params = [];
+  if (cid) { params.push(cid); query += ` WHERE client_id=$1`; }
+  query += " ORDER BY tag";
+  const r = await pool.query(query, params);
+  res.json(r.rows.map(row => row.tag));
+});
+
+app.get("/device-types", auth, async (req, res) => {
+  res.json([
+    { value: "server",      label: "Servidor",     icon: "🖥️" },
+    { value: "camera",      label: "Câmera IP",    icon: "📷" },
+    { value: "router",      label: "Roteador",     icon: "🌐" },
+    { value: "switch",      label: "Switch",       icon: "🔀" },
+    { value: "routerboard", label: "RouterBoard",  icon: "📡" },
+    { value: "unifi",       label: "UniFi",        icon: "📶" },
+    { value: "firewall",    label: "Firewall",     icon: "🛡️" },
+    { value: "printer",     label: "Impressora",   icon: "🖨️" },
+    { value: "iot",         label: "IoT",          icon: "💡" },
+    { value: "workstation", label: "Workstation",  icon: "💻" },
+    { value: "other",       label: "Outro",        icon: "📦" },
+  ]);
+});
+
+// ── Triggers ─────────────────────────────────────────────────
+app.get("/triggers", auth, async (req, res) => {
+  const cid = clientFilter(req);
+  let query = "SELECT * FROM triggers WHERE 1=1";
+  const params = [];
+  if (cid) { params.push(cid); query += ` AND client_id=$${params.length}`; }
+  query += " ORDER BY created_at DESC";
+  const r = await pool.query(query, params);
+  res.json(r.rows);
+});
+
+app.post("/triggers", auth, async (req, res) => {
+  const { name, expression, threshold, enabled, device_type, tags } = req.body;
+  if (!name || !expression || threshold === undefined)
+    return res.status(400).json({ error: "name, expression, threshold required" });
+  const cid = req.user.role === "superadmin"
+    ? (req.body.client_id || null)
+    : req.user.client_id;
+  try {
+    const r = await pool.query(`
+      INSERT INTO triggers (name, expression, threshold, enabled, device_type, tags, client_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *
+    `, [name, expression, threshold, enabled!==false, device_type||null, tags||[], cid]);
+    res.status(201).json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put("/triggers/:id", auth, async (req, res) => {
+  const { name, expression, threshold, enabled, device_type, tags } = req.body;
+  try {
+    const r = await pool.query(`
+      UPDATE triggers SET name=$1,expression=$2,threshold=$3,enabled=$4,device_type=$5,tags=$6
+      WHERE id=$7 RETURNING *
+    `, [name, expression, threshold, enabled, device_type||null, tags||[], req.params.id]);
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/triggers/:id", auth, async (req, res) => {
+  await pool.query("DELETE FROM triggers WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
+});
+
+app.get("/agent/devices", async (req, res) => {
+  const token = req.headers["x-device-token"];
+  if (!token) return res.status(401).json({ error: "Token required" });
+  try {
+    const dr = await pool.query("SELECT client_id FROM devices WHERE token=$1", [token]);
+    if (dr.rows.length === 0) return res.status(401).json({ error: "Invalid token" });
+    const cid = dr.rows[0].client_id;
+    const devices = await pool.query(
+      "SELECT id, name, ip_address, ddns_address, monitor_port, monitor_ping FROM devices WHERE client_id=$1",
+      [cid]
+    );
+    res.json(devices.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Metrics ───────────────────────────────────────────────────
+app.post("/metrics", metricsLimiter, async (req, res) => {
+  const deviceToken = req.headers["x-device-token"] || req.body.device_token;
+  const { host, cpu, memory, disk_used, disk_total, disk_percent,
+          net_rx_bytes, net_tx_bytes, latency_ms, uptime_seconds,
+          load_avg, processes, temperature, device_id, status } = req.body;
+  if (!host || cpu === undefined || memory === undefined)
+    return res.status(400).json({ error: "host, cpu, memory required" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    let targetDeviceId = null;
+    let clientId = null;
+
+    if (deviceToken) {
+      const dr = await client.query("SELECT id, client_id FROM devices WHERE token=$1", [deviceToken]);
+      if (dr.rows.length > 0) {
+        clientId = dr.rows[0].id; // O ID do dispositivo que enviou (o Agent)
+        const client_id_owner = dr.rows[0].client_id;
+        
+        // Se o corpo enviou um device_id específico (ex: sub-dispositivo monitorado pelo agente)
+        targetDeviceId = device_id || dr.rows[0].id;
+        
+        // Atualiza o status do dispositivo (seja o principal ou o monitorado)
+        const deviceStatus = status || 'online';
+        await client.query(
+          "UPDATE devices SET last_seen=NOW(), status=$1 WHERE id=$2",
+          [deviceStatus, targetDeviceId]
+        );
+      }
+    }
+
+    const hr = await client.query(
+      "INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id",
+      [host]
+    );
+    await client.query(`
+      INSERT INTO metrics (time,host_id,host,device_id,cpu,memory,disk_used,disk_total,
+        disk_percent,net_rx_bytes,net_tx_bytes,latency_ms,uptime_seconds,load_avg,processes,temperature)
+      VALUES (NOW(),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+    `, [hr.rows[0].id, host, targetDeviceId, cpu, memory, disk_used||0, disk_total||0,
+        disk_percent||0, net_rx_bytes||0, net_tx_bytes||0, latency_ms||0,
+        uptime_seconds||0, load_avg||0, processes||0, temperature||0]);
+    await client.query("COMMIT");
+    fetch(`${WEBSOCKET_URL}/publish`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ host, cpu, memory, disk_percent: disk_percent||0,
+        latency_ms: latency_ms||0, device_id: targetDeviceId, client_id: clientId,
+        time: new Date().toISOString() }),
+    }).catch(() => {});
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+app.get("/metrics/:host", auth, async (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours)||1, 24);
+  const r = await pool.query(`
+    SELECT time,cpu,memory,disk_percent,net_rx_bytes,net_tx_bytes,
+           latency_ms,uptime_seconds,load_avg,processes,temperature
+    FROM metrics WHERE host=$1 AND time > NOW()-($2||' hours')::INTERVAL
+    ORDER BY time DESC LIMIT 1000
+  `, [req.params.host, hours]);
+  res.json(r.rows);
+});
+
+// ── Alerts ────────────────────────────────────────────────────
+app.get("/alerts", auth, async (req, res) => {
+  const cid = clientFilter(req);
+  let query = `
+    SELECT a.*, t.name as trigger_name, d.name as device_name, d.device_type,
+           c.name as client_name
+    FROM alerts a
+    LEFT JOIN triggers t ON a.trigger_id=t.id
+    LEFT JOIN devices  d ON a.device_id=d.id
+    LEFT JOIN clients  c ON a.client_id=c.id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (cid) { params.push(cid); query += ` AND a.client_id=$${params.length}`; }
+  query += " ORDER BY a.fired_at DESC LIMIT 200";
+  const r = await pool.query(query, params);
+  res.json(r.rows);
+});
+
+// ── Dashboard stats ───────────────────────────────────────────
+app.get("/stats", auth, async (req, res) => {
+  const cid = clientFilter(req);
+  const where = cid ? `WHERE client_id=${cid}` : "";
+  const [total, online, offline, clients_total] = await Promise.all([
+    pool.query(`SELECT COUNT(*) FROM devices ${where}`),
+    pool.query(`SELECT COUNT(*) FROM devices ${where ? where + " AND" : "WHERE"} status='online'`),
+    pool.query(`SELECT COUNT(*) FROM devices ${where ? where + " AND" : "WHERE"} status='offline'`),
+    req.user.role === "superadmin" ? pool.query("SELECT COUNT(*) FROM clients WHERE status='active'") : Promise.resolve({ rows: [{ count: 0 }] }),
+  ]);
+  res.json({
+    devices: parseInt(total.rows[0].count),
+    online:  parseInt(online.rows[0].count),
+    offline: parseInt(offline.rows[0].count),
+    clients: parseInt(clients_total.rows[0].count),
+  });
+});
+
+app.get("/hosts", auth, async (req, res) => {
+  try {
+    const cid = clientFilter(req);
+    let query = "SELECT DISTINCT h.* FROM hosts h";
+    const params = [];
+    
+    if (cid) {
+      params.push(cid);
+      query += ` JOIN devices d ON d.hostname = h.name OR d.ip_address = h.name WHERE d.client_id = $1`;
+    }
+    
+    query += " ORDER BY h.name";
+    const r = await pool.query(query, params);
+    res.json(r.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── 404 Handler ──────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ 
@@ -1015,7 +1402,7 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   logger("ERROR", "Unhandled error", { 
     message: err.message, 
-    path: req.path,
+    path: req.path, 
     method: req.method 
   });
   res.status(err.status || 500).json({ 
@@ -1032,7 +1419,13 @@ app.listen(PORT, "0.0.0.0", () => {
   });
 });
 
-// ── Graceful Shutdown ──────────────────────────────────────────
+process.on("SIGTERM", () => {
+  logger("WARN", "SIGTERM received, shutting down gracefully");
+  pool.end(() => {
+    logger("INFO", "Database pool closed");
+    process.exit(0);
+  });
+});
 // --- MONITORAMENTO CLOUD (SEM AGENTE) ---
 async function cloudMonitor(deviceId = null) {
   try {
