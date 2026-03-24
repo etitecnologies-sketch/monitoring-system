@@ -159,7 +159,7 @@ async function initDB() {
       clients: ['document', 'email', 'phone', 'address', 'city', 'state', 'plan', 'status', 'telegram_token', 'telegram_chat_id', 'alert_email', 'notes'],
       users: ['role', 'client_id'],
       devices: ['client_id', 'ip_address', 'device_type', 'tags', 'snmp_community', 'snmp_version', 'ssh_user', 'ssh_port', 'monitor_ping', 'monitor_snmp', 'monitor_agent', 'ddns_address', 'monitor_port', 'notes'],
-      metrics: ['host_id', 'disk_used', 'disk_total', 'net_rx_bytes', 'net_tx_bytes', 'load_avg', 'processes', 'temperature'],
+      metrics: ['host_id', 'disk_used', 'disk_total', 'net_rx_bytes', 'net_tx_bytes', 'load_avg', 'processes', 'temperature', 'status'],
       triggers: ['device_type', 'tags', 'client_id'],
       alerts: ['client_id']
     };
@@ -936,16 +936,18 @@ app.listen(PORT, "0.0.0.0", () => {
 async function cloudMonitor() {
   try {
     const r = await pool.query(
-      "SELECT id, name, ddns_address, monitor_port, ip_address, monitor_ping FROM devices WHERE ddns_address <> '' AND monitor_port > 0"
+      "SELECT id, name, client_id, ddns_address, monitor_port FROM devices WHERE ddns_address <> '' AND monitor_port > 0"
     );
     
+    if (r.rows.length === 0) return;
+
     for (const dev of r.rows) {
-      const { id, name, ddns_address, monitor_port } = dev;
+      const { id, name, client_id, ddns_address, monitor_port } = dev;
       
       const check = () => new Promise((resolve) => {
         const socket = new net.Socket();
         const start = Date.now();
-        socket.setTimeout(3000);
+        socket.setTimeout(5000); // 5 segundos de timeout
 
         socket.on("connect", () => {
           const lat = Date.now() - start;
@@ -958,7 +960,7 @@ async function cloudMonitor() {
           resolve({ alive: false, lat: 0 });
         });
 
-        socket.on("error", () => {
+        socket.on("error", (err) => {
           socket.destroy();
           resolve({ alive: false, lat: 0 });
         });
@@ -969,26 +971,49 @@ async function cloudMonitor() {
       const result = await check();
       const status = result.alive ? 'online' : 'offline';
       
-      // Atualiza o status no banco
+      // 1. Atualiza o status no banco (tabela devices)
       await pool.query(
         "UPDATE devices SET last_seen=NOW(), status=$1 WHERE id=$2",
         [status, id]
       );
 
-      // Registra métrica básica (latência)
+      // 2. Garante que o host existe na tabela hosts
+      const hr = await pool.query(
+        "INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id",
+        [name]
+      );
+
+      // 3. Registra métrica básica na tabela metrics
       await pool.query(`
-        INSERT INTO metrics (time, host, device_id, cpu, memory, latency_ms, status)
-        VALUES (NOW(), $1, $2, 0, 0, $3, $4)
-      `, [name, id, result.lat, status]);
+        INSERT INTO metrics (time, host_id, host, device_id, cpu, memory, latency_ms, status)
+        VALUES (NOW(), $1, $2, $3, 0, 0, $4, $5)
+      `, [hr.rows[0].id, name, id, result.lat, status]);
+
+      // 4. Envia atualização em tempo real via WebSocket
+      fetch(`${WEBSOCKET_URL}/publish`, {
+        method: "POST", 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          host: name, 
+          cpu: 0, 
+          memory: 0, 
+          disk_percent: 0,
+          latency_ms: result.lat, 
+          device_id: id, 
+          client_id: client_id,
+          status: status,
+          time: new Date().toISOString() 
+        }),
+      }).catch(() => {});
 
       if (result.alive) {
-        logger("INFO", `Cloud Check: ${name} (${ddns_address}:${monitor_port}) está ONLINE (${result.lat}ms)`);
+        logger("INFO", `[CloudMonitor] ✓ ${name} (${ddns_address}:${monitor_port}) está ONLINE (${result.lat}ms)`);
       } else {
-        logger("WARN", `Cloud Check: ${name} (${ddns_address}:${monitor_port}) está OFFLINE`);
+        logger("WARN", `[CloudMonitor] ❌ ${name} (${ddns_address}:${monitor_port}) está OFFLINE`);
       }
     }
   } catch (e) {
-    logger("ERROR", `Erro no CloudMonitor: ${e.message}`);
+    logger("ERROR", `[CloudMonitor] Erro: ${e.message}`);
   }
 }
 
