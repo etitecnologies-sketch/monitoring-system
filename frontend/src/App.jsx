@@ -33,7 +33,9 @@ async function api(path, opts = {}) {
 
     if (res.status === 401) {
       removeToken();
-      window.location.href = "/login";
+      // Em vez de redirecionar para uma URL física /login, vamos recarregar a página
+      // O App.jsx ao recarregar verá que não tem token e mostrará a AuthPage
+      window.location.href = "/"; 
       return;
     }
 
@@ -1648,6 +1650,7 @@ export default function App() {
   return (
     <div style={{...S.app, flexDirection: "row", overflow: "hidden"}}>
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }

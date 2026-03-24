@@ -2,10 +2,11 @@
 
 # Iniciar o Tailscale em background se a AuthKey estiver presente
 if [ -n "$TAILSCALE_AUTHKEY" ]; then
-    echo "Iniciando Tailscale no servidor da API..."
-    tailscaled --state=/tmp/tailscaled.state --socket=/tmp/tailscaled.sock &
+    echo "Iniciando Tailscale (userspace-networking) no servidor da API..."
+    # --tun=userspace-networking é essencial para rodar em containers sem /dev/net/tun (Railway)
+    tailscaled --state=/tmp/tailscaled.state --socket=/tmp/tailscaled.sock --tun=userspace-networking &
     sleep 5
-    tailscale up --authkey=$TAILSCALE_AUTHKEY --hostname=nexuswatch-api --accept-routes
+    tailscale --socket=/tmp/tailscaled.sock up --authkey=$TAILSCALE_AUTHKEY --hostname=nexuswatch-api --accept-routes
     echo "API Conectada à Rede Privada Tailscale!"
 else
     echo "Aviso: TAILSCALE_AUTHKEY não definida. Rodando sem VPN..."
