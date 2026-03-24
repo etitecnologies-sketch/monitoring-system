@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const API = window.location.hostname === "localhost"
-  ? "http://localhost:3000"
-  : ""; // Em produção usa URLs relativas via Nginx proxy
+const rawApiBase = import.meta.env.VITE_API_URL || "";
+const API = rawApiBase.replace(/["']/g, "").trim() || (window.location.hostname === "localhost" ? "http://localhost:3000" : "");
 
 const getToken = () => localStorage.getItem("token");
 const setToken = (t) => localStorage.setItem("token", t);
@@ -11,24 +10,32 @@ const removeToken = () => localStorage.removeItem("token");
 async function api(path, opts = {}) {
   const token = getToken();
 
-  const res = await fetch(`${API}${path}`, {
-    ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(opts.headers || {}),
-    },
-  });
+  try {
+    const res = await fetch(`${API}${path}`, {
+      ...opts,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(opts.headers || {}),
+      },
+    });
 
-  if (res.status === 401) {
-    removeToken();
-    window.location.href = "/login";
-    return;
+    if (res.status === 401) {
+      removeToken();
+      window.location.href = "/login";
+      return;
+    }
+
+    const data = await res.json();
+    if (!res.ok) {
+      console.error(`API Error [${res.status}] ${path}:`, data);
+      throw data;
+    }
+    return data;
+  } catch (err) {
+    console.error(`Fetch Error ${path}:`, err);
+    throw err;
   }
-
-  if (!res.ok) throw await res.json();
-
-  return res.json();
 }
 
 const DEVICE_TYPES = [

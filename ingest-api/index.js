@@ -44,6 +44,8 @@ const pool = new Pool({
 async function initDB() {
   try {
     logger("INFO", "Initializing database schema...");
+    
+    // Create tables in correct order
     await pool.query(`
       CREATE TABLE IF NOT EXISTS clients (
           id                SERIAL PRIMARY KEY,
@@ -91,7 +93,15 @@ async function initDB() {
           location      TEXT    DEFAULT '',
           status        TEXT    DEFAULT 'pending',
           last_seen     TIMESTAMPTZ,
-          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          snmp_community TEXT DEFAULT 'public',
+          snmp_version   TEXT DEFAULT '2c',
+          ssh_user       TEXT,
+          ssh_port       INT DEFAULT 22,
+          monitor_ping   BOOLEAN DEFAULT TRUE,
+          monitor_snmp   BOOLEAN DEFAULT FALSE,
+          monitor_agent  BOOLEAN DEFAULT TRUE,
+          notes          TEXT DEFAULT ''
       );
 
       CREATE TABLE IF NOT EXISTS metrics (
@@ -139,24 +149,50 @@ async function initDB() {
           resolved_at TIMESTAMPTZ
       );
     `);
-    logger("INFO", "Database schema ready");
-    
-    // Check for missing columns in existing tables (for migrations)
+
+    // Migration helper: Add missing columns to existing tables
+    const tables = {
+      users: ['role', 'client_id'],
+      devices: ['client_id', 'ip_address', 'device_type', 'tags', 'snmp_community', 'snmp_version', 'ssh_user', 'ssh_port', 'monitor_ping', 'monitor_snmp', 'monitor_agent', 'notes'],
+      metrics: ['host_id', 'disk_used', 'disk_total', 'net_rx_bytes', 'net_tx_bytes', 'load_avg', 'processes', 'temperature'],
+      triggers: ['device_type', 'tags', 'client_id'],
+      alerts: ['client_id']
+    };
+
+    for (const [table, columns] of Object.entries(tables)) {
+      for (const col of columns) {
+        await pool.query(`
+          DO $$ 
+          BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${table}' AND column_name='${col}') THEN
+              ALTER TABLE ${table} ADD COLUMN ${col} TEXT; -- Default to TEXT, adjust types below
+            END IF;
+          END $$;
+        `);
+      }
+    }
+
+    // Fix types for migrated columns
     await pool.query(`
-      DO $$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='role') THEN
-          ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'client';
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='client_id') THEN
-          ALTER TABLE users ADD COLUMN client_id INT REFERENCES clients(id) ON DELETE CASCADE;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='devices' AND column_name='client_id') THEN
-          ALTER TABLE devices ADD COLUMN client_id INT REFERENCES clients(id) ON DELETE CASCADE;
-        END IF;
-      END $$;
-    `);
-    logger("INFO", "Database migrations complete");
+      ALTER TABLE users ALTER COLUMN client_id TYPE INT USING client_id::integer;
+      ALTER TABLE devices ALTER COLUMN client_id TYPE INT USING client_id::integer;
+      ALTER TABLE devices ALTER COLUMN ssh_port TYPE INT USING ssh_port::integer;
+      ALTER TABLE devices ALTER COLUMN monitor_ping TYPE BOOLEAN USING monitor_ping::boolean;
+      ALTER TABLE devices ALTER COLUMN monitor_snmp TYPE BOOLEAN USING monitor_snmp::boolean;
+      ALTER TABLE devices ALTER COLUMN monitor_agent TYPE BOOLEAN USING monitor_agent::boolean;
+      ALTER TABLE metrics ALTER COLUMN host_id TYPE INT USING host_id::integer;
+      ALTER TABLE metrics ALTER COLUMN disk_used TYPE BIGINT USING disk_used::bigint;
+      ALTER TABLE metrics ALTER COLUMN disk_total TYPE BIGINT USING disk_total::bigint;
+      ALTER TABLE metrics ALTER COLUMN net_rx_bytes TYPE BIGINT USING net_rx_bytes::bigint;
+      ALTER TABLE metrics ALTER COLUMN net_tx_bytes TYPE BIGINT USING net_tx_bytes::bigint;
+      ALTER TABLE metrics ALTER COLUMN load_avg TYPE DOUBLE PRECISION USING load_avg::double precision;
+      ALTER TABLE metrics ALTER COLUMN processes TYPE INT USING processes::integer;
+      ALTER TABLE metrics ALTER COLUMN temperature TYPE DOUBLE PRECISION USING temperature::double precision;
+      ALTER TABLE triggers ALTER COLUMN client_id TYPE INT USING client_id::integer;
+      ALTER TABLE alerts ALTER COLUMN client_id TYPE INT USING client_id::integer;
+    `).catch(() => {}); // Ignore errors if already correct type
+
+    logger("INFO", "Database schema and migrations complete");
   } catch (e) {
     logger("ERROR", "Failed to initialize database", { error: e.message });
   }
@@ -285,6 +321,9 @@ app.get("/clients/:id", auth, superadmin, async (req, res) => {
 app.post("/clients", auth, superadmin, async (req, res) => {
   const { name, document, email, phone, address, city, state, plan, status,
           telegram_token, telegram_chat_id, alert_email, notes } = req.body;
+  
+  logger("INFO", "Attempting to create client", { name, user: req.user.username });
+
   if (!name) return res.status(400).json({ error: "Name required" });
   try {
     const r = await pool.query(`
@@ -293,13 +332,21 @@ app.post("/clients", auth, superadmin, async (req, res) => {
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *
     `, [name, document||"", email||"", phone||"", address||"", city||"", state||"",
         plan||"basic", status||"active", telegram_token||"", telegram_chat_id||"", alert_email||"", notes||""]);
+    
+    logger("INFO", "Client created successfully", { id: r.rows[0].id, name });
     res.status(201).json(r.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { 
+    logger("ERROR", "Failed to create client", { error: e.message });
+    res.status(500).json({ error: e.message }); 
+  }
 });
 
 app.put("/clients/:id", auth, superadmin, async (req, res) => {
   const { name, document, email, phone, address, city, state, plan, status,
           telegram_token, telegram_chat_id, alert_email, notes } = req.body;
+  
+  logger("INFO", "Attempting to update client", { id: req.params.id, name });
+
   try {
     const r = await pool.query(`
       UPDATE clients SET name=$1, document=$2, email=$3, phone=$4, address=$5,
@@ -309,8 +356,15 @@ app.put("/clients/:id", auth, superadmin, async (req, res) => {
     `, [name, document||"", email||"", phone||"", address||"", city||"", state||"",
         plan||"basic", status||"active", telegram_token||"", telegram_chat_id||"",
         alert_email||"", notes||"", req.params.id]);
+    
+    if (r.rows.length === 0) return res.status(404).json({ error: "Client not found" });
+    
+    logger("INFO", "Client updated successfully", { id: req.params.id });
     res.json(r.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { 
+    logger("ERROR", "Failed to update client", { error: e.message });
+    res.status(500).json({ error: e.message }); 
+  }
 });
 
 app.delete("/clients/:id", auth, superadmin, async (req, res) => {
