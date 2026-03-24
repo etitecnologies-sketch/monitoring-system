@@ -1,4 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+
+// Hook para detectar tela mobile
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+  return isMobile;
+}
 
 const rawApiBase = import.meta.env.VITE_API_URL || "";
 const API = rawApiBase.replace(/["']/g, "").trim() || (window.location.hostname === "localhost" ? "http://localhost:3000" : "");
@@ -131,7 +142,12 @@ const S = {
     textShadow: "0 0 15px rgba(255,255,255,0.2)"
   },
   pageSub: { fontSize: 12, color: "#64748b", marginBottom: 30, letterSpacing: 0.5 },
-  grid: (cols) => ({ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 20, marginBottom: 20 }),
+  grid: (cols) => ({ 
+    display: "grid", 
+    gridTemplateColumns: window.innerWidth < 768 ? "1fr" : `repeat(${cols}, 1fr)`, 
+    gap: 20, 
+    marginBottom: 20 
+  }),
   card: { 
     background: "rgba(10, 15, 26, 0.6)", 
     backdropFilter: "blur(8px)",
@@ -235,8 +251,9 @@ const S = {
     background: "rgba(10, 15, 26, 0.95)", 
     border: "1px solid rgba(56, 189, 248, 0.3)", 
     borderRadius: 16, 
-    padding: 32, 
-    width: 580, 
+    padding: window.innerWidth < 768 ? 20 : 32, 
+    width: "95%",
+    maxWidth: 580, 
     maxHeight: "90vh", 
     overflowY: "auto",
     boxShadow: "0 0 50px rgba(0,0,0,0.5), 0 0 20px rgba(56, 189, 248, 0.1)"
@@ -327,9 +344,10 @@ function AuthPage({ onLogin }) {
     <div style={{ ...S.app, alignItems: "center", justifyContent: "center" }}>
       <div style={{ 
         ...S.card, 
-        width: 380, 
+        width: "90%",
+        maxWidth: 380, 
         textAlign: "center", 
-        padding: 40,
+        padding: window.innerWidth < 768 ? "30px 20px" : 40,
         border: "1px solid rgba(56, 189, 248, 0.3)",
         boxShadow: "0 0 50px rgba(0, 0, 0, 0.5), 0 0 20px rgba(56, 189, 248, 0.1)"
       }}>
@@ -516,7 +534,7 @@ function ClientsPage() {
         <span style={{ fontSize: 11, color: "#3a5070", alignSelf: "center" }}>{filtered.length} resultado(s)</span>
       </div>
 
-      <div style={S.card}>
+      <div style={{ ...S.card, overflowX: "auto" }}>
         <table style={S.table}>
           <thead>
             <tr>{["Cliente", "Plano", "Status", "Devices", "Online", "Offline", "Cidade", "Ações"].map((h) => (
@@ -578,7 +596,7 @@ const EMPTY_DEVICE = {
   name: "", description: "", location: "", device_type: "other",
   ip_address: "", tags: [], snmp_community: "public", snmp_version: "2c",
   ssh_user: "", ssh_port: 22, monitor_ping: true, monitor_snmp: false,
-  monitor_agent: true, notes: "", client_id: null,
+  monitor_agent: true, ddns_address: "", monitor_port: 0, notes: "", client_id: null,
 };
 
 function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose }) {
@@ -630,7 +648,7 @@ function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose 
         <div style={S.fg}><label style={S.label}>Tags</label><TagInput value={form.tags} onChange={(v) => set("tags", v)} /></div>
 
         <div style={S.divider} />
-        <div style={S.sectionTitle}>Monitoramento</div>
+        <div style={S.sectionTitle}>Monitoramento & Redirecionamento</div>
         <div style={{ display: "flex", gap: 18, marginBottom: 12 }}>
           {[["monitor_agent","Agente"],["monitor_ping","Ping/ICMP"],["monitor_snmp","SNMP"]].map(([k,l]) => (
             <label key={k} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#94a3b8", cursor: "pointer" }}>
@@ -638,6 +656,18 @@ function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose 
             </label>
           ))}
         </div>
+
+        <div style={S.grid(2)}>
+          <div style={S.fg}>
+            <label style={S.label}>Endereço No-IP / DDNS</label>
+            <input style={S.input} value={form.ddns_address} onChange={(e) => set("ddns_address", e.target.value)} placeholder="ex: camera1.ddns.net" />
+          </div>
+          <div style={S.fg}>
+            <label style={S.label}>Porta de Redirecionamento</label>
+            <input style={S.input} type="number" value={form.monitor_port} onChange={(e) => set("monitor_port", e.target.value)} placeholder="ex: 8080" />
+          </div>
+        </div>
+
         {form.monitor_snmp && (
           <div style={S.grid(2)}>
             <div style={S.fg}><label style={S.label}>SNMP Community</label><input style={S.input} value={form.snmp_community} onChange={(e) => set("snmp_community", e.target.value)} /></div>
@@ -720,7 +750,7 @@ function DevicesPage({ userRole, userClientId }) {
         <span style={{ fontSize: 11, color: "#3a5070", alignSelf: "center" }}>{filtered.length} resultado(s)</span>
       </div>
 
-      <div style={S.card}>
+      <div style={{ ...S.card, overflowX: "auto" }}>
         <table style={S.table}>
           <thead>
             <tr>{["Tipo", "Nome", "IP/DDNS", userRole === "superadmin" ? "Cliente" : null, "Status", "CPU", "Mem", "Lat", "Tags", "Ações"].filter(Boolean).map((h) => <th key={h} style={S.th}>{h}</th>)}</tr>
@@ -788,11 +818,16 @@ function Dashboard({ userRole }) {
   const byType = DEVICE_TYPES.map((t) => ({ ...t, count: devices.filter((d) => d.device_type === t.value).length })).filter((t) => t.count > 0);
 
   return (
-    <div>
+    <div style={{ padding: isMobile ? "0 5px" : 0 }}>
       <div style={S.pageTitle}>📊 Dashboard</div>
       <div style={S.pageSub}>Visão geral — NexusWatch Pro</div>
 
-      <div style={S.grid(userRole === "superadmin" ? 5 : 4)}>
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : `repeat(${userRole === "superadmin" ? 5 : 4}, 1fr)`, 
+        gap: isMobile ? 10 : 20, 
+        marginBottom: 20 
+      }}>
         {[
           ...(userRole === "superadmin" ? [{ label: "Clientes", value: stats.clients, color: "#a78bfa" }] : []),
           { label: "Total Devices", value: stats.devices, color: "#38bdf8" },
@@ -800,14 +835,19 @@ function Dashboard({ userRole }) {
           { label: "Offline", value: stats.offline, color: "#ef4444" },
           { label: "Alertas 24h", value: alerts.length, color: "#f59e0b" },
         ].map((s) => (
-          <div key={s.label} style={S.statCard(s.color)}>
-            <div style={S.statVal(s.color)}>{s.value}</div>
-            <div style={S.statLabel}>{s.label}</div>
+          <div key={s.label} style={{ ...S.statCard(s.color), padding: isMobile ? 12 : 20 }}>
+            <div style={{ ...S.statVal(s.color), fontSize: isMobile ? 24 : 32 }}>{s.value}</div>
+            <div style={{ ...S.statLabel, fontSize: isMobile ? 9 : 11 }}>{s.label}</div>
           </div>
         ))}
       </div>
 
-      <div style={S.grid(userRole === "superadmin" ? 3 : 2)}>
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: isMobile ? "1fr" : `repeat(${userRole === "superadmin" ? 3 : 2}, 1fr)`, 
+        gap: 20, 
+        marginBottom: 20 
+      }}>
         <div style={S.card}>
           <div style={S.sectionTitle}>Devices por Tipo</div>
           {byType.length === 0 && <div style={{ color: "#3a5070", fontSize: 11 }}>Nenhum device</div>}
@@ -824,11 +864,11 @@ function Dashboard({ userRole }) {
             <div style={S.sectionTitle}>Top Clientes</div>
             {clients.slice(0, 6).map((c) => (
               <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: "#f1f5f9" }}>{c.name}</div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
                   <div style={{ fontSize: 9, color: "#3a5070" }}>{c.city||"—"}</div>
                 </div>
-                <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 5, alignItems: "center", marginLeft: 10 }}>
                   <span style={S.badge("#22c55e")}>{c.online_count||0} on</span>
                   {(c.offline_count||0) > 0 && <span style={S.badge("#ef4444")}>{c.offline_count} off</span>}
                 </div>
@@ -841,41 +881,74 @@ function Dashboard({ userRole }) {
           <div style={S.sectionTitle}>Alertas Recentes</div>
           {alerts.slice(0, 5).length === 0 && <div style={{ color: "#3a5070", fontSize: 11 }}>Nenhum alerta</div>}
           {alerts.slice(0, 5).map((a) => (
-            <div key={a.id} style={{ marginBottom: 9, paddingBottom: 9, borderBottom: "1px solid #0d1520" }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 11, color: "#f1f5f9" }}>{a.trigger_name || a.expression}</span>
+            <div key={a.id} style={{ marginBottom: 9, paddingBottom: 9, borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <span style={{ fontSize: 11, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.trigger_name || a.expression}</span>
                 <span style={S.badge(a.alert_type==="offline"?"#ef4444":"#f59e0b")}>{a.alert_type==="offline"?"🔴 off":"⚠️"}</span>
               </div>
-              <div style={{ fontSize: 10, color: "#3a5070" }}>{a.device_name||a.host} {a.client_name ? `— ${a.client_name}` : ""}</div>
+              <div style={{ fontSize: 10, color: "#3a5070", marginTop: 2 }}>{a.device_name||a.host} {a.client_name ? `— ${a.client_name}` : ""}</div>
             </div>
           ))}
         </div>
       </div>
 
       <div style={S.card}>
-        <div style={S.sectionTitle}>Devices Online com Métricas</div>
-        <div style={S.grid(4)}>
-          {devices.filter((d) => d.status==="online" && d.last_cpu!=null).slice(0,8).map((d) => (
-            <div key={d.id} style={{ ...S.card, padding: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                <span style={{ fontSize: 16 }}>{deviceIcon(d.device_type)}</span>
+        <div style={S.sectionTitle}>Dispositivos em Tempo Real</div>
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(220px, 1fr))", 
+          gap: 15 
+        }}>
+          {devices.filter((d) => d.status==="online" && d.last_cpu!=null).slice(0,12).map((d) => (
+            <div key={d.id} style={{ 
+              background: "rgba(255,255,255,0.02)", 
+              border: "1px solid rgba(255,255,255,0.05)", 
+              borderRadius: 12, 
+              padding: 12,
+              position: "relative"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <div style={{ 
+                  width: 32, height: 32, borderRadius: 8, 
+                  background: "rgba(56, 189, 248, 0.1)", 
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 16
+                }}>
+                  {deviceIcon(d.device_type)}
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
-                  {userRole === "superadmin" && <div style={{ fontSize: 9, color: "#3a5070" }}>{d.client_name||"—"}</div>}
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                  <div style={{ fontSize: 9, color: "#64748b" }}>{d.client_name||"—"}</div>
                 </div>
               </div>
-              {[{l:"CPU",v:d.last_cpu,c:"#38bdf8"},{l:"MEM",v:d.last_memory,c:"#a78bfa"}].map((m) => (
-                <div key={m.l} style={{ marginBottom: 5 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#3a5070" }}>
-                    <span>{m.l}</span><span style={{ color: m.c }}>{(m.v||0).toFixed(1)}%</span>
+              
+              <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#94a3b8", marginBottom: 4 }}>
+                    <span>CPU</span><span style={{ color: "#38bdf8" }}>{(d.last_cpu||0).toFixed(0)}%</span>
                   </div>
-                  <Bar value={m.v} color={m.c} />
+                  <Bar value={d.last_cpu} color="#38bdf8" />
                 </div>
-              ))}
-              <div style={{ fontSize: 9, color: "#3a5070", marginTop: 4 }}>📡 {Math.round(d.last_latency||0)}ms</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#94a3b8", marginBottom: 4 }}>
+                    <span>RAM</span><span style={{ color: "#a78bfa" }}>{(d.last_memory||0).toFixed(0)}%</span>
+                  </div>
+                  <Bar value={d.last_memory} color="#a78bfa" />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                <div style={{ fontSize: 9, color: "#475569" }}>📡 {Math.round(d.last_latency||0)}ms</div>
+                <div style={{ fontSize: 9, color: "#22c55e", fontWeight: 600 }}>● ONLINE</div>
+              </div>
             </div>
           ))}
         </div>
+        {devices.filter((d) => d.status==="online" && d.last_cpu!=null).length === 0 && (
+          <div style={{ textAlign: "center", padding: "40px 0", color: "#3a5070", fontSize: 12 }}>
+            Aguardando métricas dos dispositivos...
+          </div>
+        )}
       </div>
     </div>
   );
@@ -918,7 +991,7 @@ function AlertsPage({ userRole }) {
         )}
       </div>
 
-      <div style={S.card}>
+      <div style={{ ...S.card, overflowX: "auto" }}>
         <table style={S.table}>
           <thead>
             <tr>{["Tipo", "Device", userRole==="superadmin"?"Cliente":null, "Métrica", "Valor", "Limite", "Horário"].filter(Boolean).map((h) => <th key={h} style={S.th}>{h}</th>)}</tr>
@@ -982,7 +1055,7 @@ function TriggersPage({ userRole }) {
         <button style={S.btn("primary")} onClick={openNew}>+ Novo Trigger</button>
       </div>
 
-      <div style={S.card}>
+      <div style={{ ...S.card, overflowX: "auto" }}>
         <table style={S.table}>
           <thead><tr>{["Status","Nome","Métrica","Limite",userRole==="superadmin"?"Cliente":null,"Ações"].filter(Boolean).map((h) => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
           <tbody>
@@ -1428,16 +1501,22 @@ function SolarPage({ userRole }) {
 }
 
 export default function App() {
+  const isMobile = useIsMobile();
   const [authed, setAuthed] = useState(!!getToken());
   const [userRole, setUserRole] = useState("superadmin");
   const [userClientId, setUserClientId] = useState(null);
   const [page, setPage] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (authed) {
       api("/auth/me").then((u) => { setUserRole(u.role); setUserClientId(u.client_id); }).catch(() => {});
     }
   }, [authed]);
+
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false);
+  }, [page, isMobile]);
 
   if (!authed) return <AuthPage onLogin={(role, cid) => { setUserRole(role); setUserClientId(cid); setAuthed(true); }} />;
 
@@ -1472,22 +1551,30 @@ export default function App() {
     solar: <SolarPage userRole={userRole} />,
   };
 
+  const sidebarStyle = {
+    ...S.sidebar,
+    position: isMobile ? "fixed" : "relative",
+    zIndex: 1001,
+    height: "100vh",
+    transform: isMobile ? (sidebarOpen ? "translateX(0)" : "translateX(-100%)") : "none",
+    transition: "transform 0.3s ease-in-out",
+    width: 240,
+  };
+
   return (
-    <div style={S.app}>
+    <div style={{...S.app, flexDirection: "row", overflow: "hidden"}}>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
         ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.2); border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.4); }
         input[type=checkbox] { accent-color: #38bdf8; }
-        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
         
-        body {
-          margin: 0;
-          padding: 0;
-          overflow: hidden;
-          background: #050508;
+        @media (max-width: 768px) {
+          body { overflow: auto !important; }
+          .main-content { padding: 15px !important; }
+          .grid-responsive { grid-template-columns: 1fr !important; }
         }
 
         .glass {
@@ -1503,29 +1590,67 @@ export default function App() {
         }
       `}</style>
 
-      <div style={S.sidebar}>
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            backdropFilter: "blur(2px)",
+            zIndex: 1000
+          }}
+        />
+      )}
+
+      <div style={sidebarStyle}>
         <div style={S.logo}>
           <div style={{ fontSize: 22, marginBottom: 4 }}>📡</div>
           <div style={S.logoTitle}>NexusWatch Pro</div>
           <div style={S.logoSub}>{isSuperAdmin ? "⚡ Superadmin" : "👤 Cliente"}</div>
         </div>
 
-        {NAV.map((n, i) =>
-          n.section
-            ? <div key={i} style={S.navSection}>{n.section}</div>
-            : <div key={n.id} style={S.navItem(page===n.id)} onClick={() => setPage(n.id)}>
-                <span>{n.icon}</span><span>{n.label}</span>
-              </div>
-        )}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {NAV.map((n, i) =>
+            n.section
+              ? <div key={i} style={S.navSection}>{n.section}</div>
+              : <div key={n.id} style={S.navItem(page===n.id)} onClick={() => setPage(n.id)}>
+                  <span>{n.icon}</span><span>{n.label}</span>
+                </div>
+          )}
+        </div>
 
-        <div style={{ marginTop: "auto", padding: "0 16px" }}>
+        <div style={{ marginTop: "auto", padding: "16px" }}>
           <button style={{ ...S.btn("ghost"), width: "100%", fontSize: 10 }} onClick={() => { removeToken(); setAuthed(false); }}>
             ⏻ Sair
           </button>
         </div>
       </div>
 
-      <div style={S.main}>{PAGES[page] || PAGES.dashboard}</div>
+      <div style={{ ...S.main, padding: isMobile ? "70px 15px 20px" : "30px 40px" }} className="main-content">
+        {isMobile && (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            style={{
+              position: "fixed",
+              top: 15,
+              left: 15,
+              zIndex: 999,
+              background: "rgba(10, 15, 26, 0.8)",
+              border: "1px solid rgba(56, 189, 248, 0.3)",
+              color: "#38bdf8",
+              padding: "8px 12px",
+              borderRadius: 8,
+              fontSize: 18,
+              backdropFilter: "blur(8px)",
+              boxShadow: "0 0 15px rgba(56, 189, 248, 0.2)"
+            }}
+          >
+            ☰
+          </button>
+        )}
+        {PAGES[page] || PAGES.dashboard}
+      </div>
     </div>
   );
 }

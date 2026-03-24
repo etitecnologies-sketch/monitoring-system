@@ -88,13 +88,15 @@ function HostCard({ host, data, deviceMap }) {
   }));
   const chartData = tab==="live" ? realtimeData : history;
 
+  const isMobile = window.innerWidth < 768;
+
   return (
     <div style={{
       background: "rgba(15, 15, 24, 0.6)",
       backdropFilter: "blur(10px)",
       border: `1px solid ${isOnline?"rgba(0, 242, 255, 0.2)":"rgba(255, 0, 85, 0.15)"}`,
       borderRadius: 20,
-      padding: 24,
+      padding: isMobile ? 16 : 24,
       transition: "all 0.4s ease",
       boxShadow: isOnline ? "0 10px 30px rgba(0, 242, 255, 0.05)" : "none",
       position: "relative",
@@ -111,21 +113,21 @@ function HostCard({ host, data, deviceMap }) {
       }} />
 
       {/* Header */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:12}}>
-        <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexDirection: isMobile ? "column" : "row", gap:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:14,width: "100%", minWidth:0}}>
           <div style={{position:"relative",flexShrink:0}}>
             <div style={{
-              width: 50,
-              height: 50,
+              width: 44,
+              height: 44,
               background: isOnline ? "rgba(0, 242, 255, 0.05)" : "rgba(255, 0, 85, 0.05)",
               border: `1px solid ${isOnline ? "rgba(0, 242, 255, 0.3)" : "rgba(255, 0, 85, 0.3)"}`,
-              borderRadius: 14,
+              borderRadius: 12,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               boxShadow: isOnline ? "0 0 15px rgba(0, 242, 255, 0.1)" : "none"
             }}>
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
                 <rect x="2" y="3" width="20" height="14" rx="2" stroke={isOnline?"#00f2ff":"#ff0055"} strokeWidth="1.5"/>
                 <path d="M8 21h8M12 17v4" stroke={isOnline?"#00f2ff":"#ff0055"} strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
@@ -134,29 +136,30 @@ function HostCard({ host, data, deviceMap }) {
               position: "absolute",
               bottom: -2,
               right: -2,
-              width: 12,
-              height: 12,
+              width: 10,
+              height: 10,
               borderRadius: "50%",
               background: isOnline ? "#00f2ff" : "#ff0055",
-              border: "3px solid #0f0f18",
+              border: "2px solid #0f0f18",
               boxShadow: isOnline ? "0 0 10px #00f2ff" : "0 0 10px #ff0055"
             }}/>
           </div>
-          <div style={{minWidth:0}}>
-            <div style={{fontSize:18,fontWeight:700,color:"#fff",letterSpacing:0.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{host}</div>
-            <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginTop:2}}>{device?.name || "Dispositivo Desconhecido"}</div>
+          <div style={{minWidth:0, flex: 1}}>
+            <div style={{fontSize:isMobile ? 16 : 18,fontWeight:700,color:"#fff",letterSpacing:0.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{host}</div>
+            <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginTop:2}}>{device?.name || "Dispositivo Desconhecido"}</div>
           </div>
         </div>
-        <div style={{display:"flex",gap:6}}>
+        <div style={{display:"flex",gap:6, width: isMobile ? "100%" : "auto"}}>
           {["live", "history"].map(t=>(
             <button key={t} onClick={()=>setTab(t)} style={{
+              flex: isMobile ? 1 : "none",
               padding: "6px 12px",
               borderRadius: 6,
               border: "1px solid",
               borderColor: tab===t ? "rgba(0, 242, 255, 0.3)" : "rgba(255,255,255,0.05)",
               background: tab===t ? "rgba(0, 242, 255, 0.1)" : "transparent",
               color: tab===t ? "#00f2ff" : "#64748b",
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: 700,
               textTransform: "uppercase",
               letterSpacing: 1,
@@ -170,26 +173,26 @@ function HostCard({ host, data, deviceMap }) {
       </div>
 
       {/* Main Gauges */}
-      <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",marginBottom:24,background:"rgba(255,255,255,0.02)",padding:"20px 10px",borderRadius:16,border:"1px solid rgba(255,255,255,0.03)"}}>
+      <div style={{display:"flex",justifyContent:"space-around",alignItems:"center",marginBottom:20,background:"rgba(255,255,255,0.02)",padding:isMobile ? "12px 6px" : "20px 10px",borderRadius:16,border:"1px solid rgba(255,255,255,0.03)"}}>
         <div style={{textAlign:"center"}}>
-          <MiniGauge value={cpu} warn={60} crit={85}/>
-          <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1.5,marginTop:8,fontWeight:600}}>CPU</div>
-          <div style={{fontSize:16,fontWeight:700,color:statusColor(cpu,60,85)}}>{cpu}%</div>
+          <MiniGauge size={isMobile ? 54 : 68} value={cpu} warn={60} crit={85}/>
+          <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:1.2,marginTop:6,fontWeight:600}}>CPU</div>
+          <div style={{fontSize:14,fontWeight:700,color:statusColor(cpu,60,85)}}>{cpu}%</div>
         </div>
         <div style={{textAlign:"center"}}>
-          <MiniGauge value={mem} warn={75} crit={90}/>
-          <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1.5,marginTop:8,fontWeight:600}}>RAM</div>
-          <div style={{fontSize:16,fontWeight:700,color:statusColor(mem,75,90)}}>{mem}%</div>
+          <MiniGauge size={isMobile ? 54 : 68} value={mem} warn={75} crit={90}/>
+          <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:1.2,marginTop:6,fontWeight:600}}>RAM</div>
+          <div style={{fontSize:14,fontWeight:700,color:statusColor(mem,75,90)}}>{mem}%</div>
         </div>
         <div style={{textAlign:"center"}}>
-          <MiniGauge value={disk} warn={80} crit={95}/>
-          <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1.5,marginTop:8,fontWeight:600}}>DISK</div>
-          <div style={{fontSize:16,fontWeight:700,color:statusColor(disk,80,95)}}>{disk}%</div>
+          <MiniGauge size={isMobile ? 54 : 68} value={disk} warn={80} crit={95}/>
+          <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:1.2,marginTop:6,fontWeight:600}}>DISK</div>
+          <div style={{fontSize:14,fontWeight:700,color:statusColor(disk,80,95)}}>{disk}%</div>
         </div>
       </div>
 
       {/* Chart Section */}
-      <div style={{height:160,marginBottom:24,position:"relative"}}>
+      <div style={{height:isMobile ? 120 : 160,marginBottom:20,position:"relative"}}>
         {loading && <div style={{position:"absolute",inset:0,background:"rgba(15,15,24,0.8)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10,borderRadius:8,fontSize:12,color:"#00f2ff",letterSpacing:2}}>SCANNING...</div>}
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData}>
@@ -203,7 +206,7 @@ function HostCard({ host, data, deviceMap }) {
             <XAxis dataKey="time" hide/>
             <YAxis hide domain={[0,100]}/>
             <Tooltip
-              contentStyle={{background:"rgba(10,15,26,0.9)",border:"1px solid rgba(0,242,255,0.3)",borderRadius:8,fontSize:11,color:"#fff",backdropFilter:"blur(4px)"}}
+              contentStyle={{background:"rgba(10,15,26,0.9)",border:"1px solid rgba(0,242,255,0.3)",borderRadius:8,fontSize:10,color:"#fff",backdropFilter:"blur(4px)"}}
               itemStyle={{padding:0}}
             />
             <Area type="monotone" dataKey="cpu" stroke="#00f2ff" strokeWidth={2} fillOpacity={1} fill="url(#colorCpu)" animationDuration={1000}/>
@@ -212,18 +215,18 @@ function HostCard({ host, data, deviceMap }) {
       </div>
 
       {/* Footer Stats */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:10}}>
         <StatBadge label="Latency" value={lat} unit="ms" color="#00f2ff"/>
         <StatBadge label="Load" value={load} color="#a78bfa"/>
         <StatBadge label="Temp" value={temp} unit="°" color={statusColor(temp, 65, 80)}/>
       </div>
 
-      <div style={{display:"flex",justifyContent:"space-between",marginTop:20,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-        <div style={{fontSize:10,color:"#475569",display:"flex",alignItems:"center",gap:5}}>
-          <span style={{width:6,height:6,borderRadius:"50%",background:isOnline?"#00f2ff":"#ff0055"}}/>
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:16,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+        <div style={{fontSize:9,color:"#475569",display:"flex",alignItems:"center",gap:5}}>
+          <span style={{width:5,height:5,borderRadius:"50%",background:isOnline?"#00f2ff":"#ff0055"}}/>
           UPTIME: {fmtUptime(data.uptime_seconds)}
         </div>
-        <div style={{fontSize:10,color:"#475569"}}>PROCESSES: {procs}</div>
+        <div style={{fontSize:9,color:"#475569"}}>PROCS: {procs}</div>
       </div>
     </div>
   );
@@ -264,7 +267,11 @@ export default function Dashboard({ hosts }) {
           <p style={{color:"#475569",fontSize:14,margin:0}}>Go to Devices tab, add a device and install the agent.</p>
         </div>
       ) : (
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(480px,1fr))",gap:20}}>
+        <div style={{
+          display: "grid", 
+          gridTemplateColumns: window.innerWidth < 768 ? "1fr" : "repeat(auto-fill,minmax(480px,1fr))", 
+          gap: 20 
+        }}>
           {hostList.map(([host,data])=>(
             <HostCard key={host} host={host} data={data} deviceMap={deviceMap}/>
           ))}

@@ -4,15 +4,28 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("LocalAgent")
 
 # --- CONFIGURAÇÃO ---
-# Cole aqui a URL da sua API no Railway
-INGEST_URL = os.getenv("INGEST_URL", "https://monitoring-system-production-1e5a.up.railway.app/metrics")
-# Cole aqui o TOKEN do dispositivo que você criou no painel
-DEVICE_TOKEN = os.getenv("DEVICE_TOKEN", "")
+# Se a sua URL do Railway for diferente, altere aqui:
+# Ex: https://powerful-unity-production.up.railway.app/metrics
+INGEST_URL = os.getenv("INGEST_URL", "https://powerful-unity-production.up.railway.app/metrics")
+DEVICE_TOKEN = os.getenv("DEVICE_TOKEN", "2d8a7f9b-ac67-47cb-ba7c-f6b807a3712e")
 # Intervalo de envio (segundos)
 INTERVAL = int(os.getenv("INTERVAL", "10"))
 
 def get_hostname():
     return socket.gethostname()
+
+def check_port(host, port):
+    """Verifica se uma porta TCP está aberta (útil para No-IP/Câmeras)"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(2)
+        start = time.time()
+        result = s.connect_ex((host, int(port)))
+        latency = round((time.time() - start) * 1000, 2)
+        s.close()
+        return result == 0, latency
+    except:
+        return False, 0
 
 def ping_device(ip):
     try:
@@ -26,8 +39,8 @@ def ping_device(ip):
     except:
         return False, 0
 
-def collect_local_metrics():
-    """Coleta métricas reais do Windows e faz ping nos dispositivos locais"""
+def collect_local_metrics(devices_to_check):
+    """Coleta métricas reais do Windows e faz ping/check nos dispositivos da API"""
     metrics = {
         "host": get_hostname(),
         "cpu": 0,
@@ -46,22 +59,54 @@ def collect_local_metrics():
     except ImportError:
         logger.warning("psutil não instalado. Usando métricas básicas.")
 
-    # --- MONITORAMENTO DE DISPOSITIVOS LOCAIS (CÂMERAS, ETC) ---
-    # Aqui você pode listar os IPs que o Agent deve vigiar
-    devices_to_ping = ["192.168.0.102"] # Sua câmera
-    
-    for ip in devices_to_ping:
-        alive, lat = ping_device(ip)
+    # --- MONITORAMENTO DINÂMICO DOS DISPOSITIVOS ---
+    for dev in devices_to_check:
+        alive = False
+        lat = 0
+        method = "UNKNOWN"
+        target = "N/A"
+
+        # Tenta primeiro por DDNS se estiver configurado
+        if dev.get("ddns_address") and dev.get("monitor_port"):
+            target = dev["ddns_address"]
+            port = dev["monitor_port"]
+            alive, lat = check_port(target, port)
+            method = f"TCP:{port}"
+            if not alive:
+                logger.warning(f"⚠️ DDNS {target}:{port} falhou. Tentando IP Local...")
+
+        # Se o DDNS falhou ou não existe, tenta pelo IP Local (Ping)
+        if not alive and dev.get("ip_address") and dev.get("monitor_ping"):
+            target = dev["ip_address"]
+            alive, lat = ping_device(target)
+            method = "PING"
+
+        if not target or target == "N/A":
+            continue
+
+        # Gera um ID para o host (limpa caracteres especiais)
+        safe_host_id = target.replace(".", "_").replace("-", "_")
+        
         if alive:
-            logger.info(f"🛰️ Dispositivo {ip} está ONLINE ({lat}ms)")
-            # Envia o status da câmera como uma métrica separada
-            # O ID do host será o IP da câmera para o painel reconhecer
-            camera_metrics = {
-                "host": f"CAMERA_{ip.split('.')[-1]}",
+            logger.info(f"🛰️ {dev['name']} ({target}) [{method}] está ONLINE ({lat}ms)")
+            status_data = {
+                "host": f"DEVICE_{safe_host_id}",
+                "device_id": dev["id"],
                 "latency_ms": lat,
-                "status": "online"
+                "status": "online",
+                "cpu": 0, "memory": 0
             }
-            send_to_api(camera_metrics)
+            send_to_api(status_data)
+        else:
+            logger.warning(f"❌ {dev['name']} ({target}) [{method}] está OFFLINE!")
+            status_data = {
+                "host": f"DEVICE_{safe_host_id}",
+                "device_id": dev["id"],
+                "latency_ms": 0,
+                "status": "offline",
+                "cpu": 0, "memory": 0
+            }
+            send_to_api(status_data)
             
     return metrics
 
@@ -71,6 +116,19 @@ def send_to_api(data):
         requests.post(INGEST_URL, json=data, headers=headers, timeout=5)
     except:
         pass
+
+def fetch_devices():
+    """Busca a lista de dispositivos para monitorar no painel"""
+    try:
+        # Remove /metrics do final para pegar a base da URL
+        base_url = INGEST_URL.split("/metrics")[0]
+        headers = {"X-Device-Token": DEVICE_TOKEN}
+        r = requests.get(f"{base_url}/agent/devices", headers=headers, timeout=10)
+        if r.status_code == 200:
+            return r.json()
+    except Exception as e:
+        logger.error(f"Erro ao buscar dispositivos: {e}")
+    return []
 
 def run_agent():
     if not DEVICE_TOKEN:
@@ -82,24 +140,35 @@ def run_agent():
 
     while True:
         try:
-            # 1. Coleta dados locais
-            metrics = collect_local_metrics()
+            # 1. Busca dispositivos atualizados do painel
+            devices = fetch_devices()
+            if devices:
+                logger.info(f"Monitorando {len(devices)} dispositivo(s) do painel.")
             
-            # 2. Envia para a API
+            # 2. Coleta dados locais e monitora os dispositivos recebidos
+            metrics = collect_local_metrics(devices)
+            
+            # 3. Envia métricas do próprio PC do Agent
             headers = {
                 "Content-Type": "application/json",
                 "X-Device-Token": DEVICE_TOKEN
             }
             
             response = requests.post(INGEST_URL, json=metrics, headers=headers, timeout=10)
-            
-            if response.status_code in [200, 201]:
-                logger.info("✓ Métricas enviadas com sucesso!")
-            else:
-                logger.error(f"x Erro na API: {response.status_code} - {response.text}")
+        
+        if response.status_code in [200, 201]:
+            logger.info("✓ Métricas enviadas com sucesso!")
+        elif response.status_code == 401:
+            logger.error("x Token inválido! Verifique o Token no Painel.")
+        elif response.status_code == 404:
+            logger.error(f"x URL não encontrada: {INGEST_URL}. Verifique a URL da API.")
+        else:
+            logger.error(f"x Erro na API: {response.status_code} - {response.text}")
 
-        except Exception as e:
-            logger.error(f"x Erro no Agent: {e}")
+    except requests.exceptions.ConnectionError:
+        logger.error(f"x Erro de conexão: Não foi possível alcançar a API em {INGEST_URL}")
+    except Exception as e:
+        logger.error(f"x Erro no Agent: {e}")
         
         time.sleep(INTERVAL)
 

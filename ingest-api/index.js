@@ -101,6 +101,8 @@ async function initDB() {
           monitor_ping   BOOLEAN DEFAULT TRUE,
           monitor_snmp   BOOLEAN DEFAULT FALSE,
           monitor_agent  BOOLEAN DEFAULT TRUE,
+          ddns_address   TEXT DEFAULT '',
+          monitor_port   INT DEFAULT 0,
           notes          TEXT DEFAULT ''
       );
 
@@ -154,7 +156,7 @@ async function initDB() {
     const tables = {
       clients: ['document', 'email', 'phone', 'address', 'city', 'state', 'plan', 'status', 'telegram_token', 'telegram_chat_id', 'alert_email', 'notes'],
       users: ['role', 'client_id'],
-      devices: ['client_id', 'ip_address', 'device_type', 'tags', 'snmp_community', 'snmp_version', 'ssh_user', 'ssh_port', 'monitor_ping', 'monitor_snmp', 'monitor_agent', 'notes'],
+      devices: ['client_id', 'ip_address', 'device_type', 'tags', 'snmp_community', 'snmp_version', 'ssh_user', 'ssh_port', 'monitor_ping', 'monitor_snmp', 'monitor_agent', 'ddns_address', 'monitor_port', 'notes'],
       metrics: ['host_id', 'disk_used', 'disk_total', 'net_rx_bytes', 'net_tx_bytes', 'load_avg', 'processes', 'temperature'],
       triggers: ['device_type', 'tags', 'client_id'],
       alerts: ['client_id']
@@ -178,6 +180,7 @@ async function initDB() {
       ALTER TABLE users ALTER COLUMN client_id TYPE INT USING client_id::integer;
       ALTER TABLE devices ALTER COLUMN client_id TYPE INT USING client_id::integer;
       ALTER TABLE devices ALTER COLUMN ssh_port TYPE INT USING ssh_port::integer;
+      ALTER TABLE devices ALTER COLUMN monitor_port TYPE INT USING monitor_port::integer;
       ALTER TABLE devices ALTER COLUMN monitor_ping TYPE BOOLEAN USING monitor_ping::boolean;
       ALTER TABLE devices ALTER COLUMN monitor_snmp TYPE BOOLEAN USING monitor_snmp::boolean;
       ALTER TABLE devices ALTER COLUMN monitor_agent TYPE BOOLEAN USING monitor_agent::boolean;
@@ -456,7 +459,7 @@ app.post("/devices", auth, async (req, res) => {
   const {
     name, description, location, device_type, ip_address, tags,
     snmp_community, snmp_version, ssh_user, ssh_port,
-    monitor_ping, monitor_snmp, monitor_agent, notes, client_id,
+    monitor_ping, monitor_snmp, monitor_agent, ddns_address, monitor_port, notes, client_id,
   } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
@@ -470,11 +473,12 @@ app.post("/devices", auth, async (req, res) => {
     const r = await pool.query(`
       INSERT INTO devices (name, description, location, token, device_type, ip_address, tags,
         snmp_community, snmp_version, ssh_user, ssh_port, monitor_ping, monitor_snmp,
-        monitor_agent, notes, client_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *
+        monitor_agent, ddns_address, monitor_port, notes, client_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *
     `, [name, description||"", location||"", token, device_type||"other", ip_address||null,
         tags||[], snmp_community||"public", snmp_version||"2c", ssh_user||null, ssh_port||22,
-        monitor_ping!==false, monitor_snmp||false, monitor_agent!==false, notes||"", cid]);
+        monitor_ping!==false, monitor_snmp||false, monitor_agent!==false, ddns_address||"",
+        parseInt(monitor_port)||0, notes||"", cid]);
     res.status(201).json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -483,18 +487,20 @@ app.put("/devices/:id", auth, async (req, res) => {
   const {
     name, description, location, device_type, ip_address, tags,
     snmp_community, snmp_version, ssh_user, ssh_port,
-    monitor_ping, monitor_snmp, monitor_agent, notes,
+    monitor_ping, monitor_snmp, monitor_agent, ddns_address, monitor_port, notes,
   } = req.body;
   try {
     const r = await pool.query(`
       UPDATE devices SET name=$1, description=$2, location=$3, device_type=$4,
         ip_address=$5, tags=$6, snmp_community=$7, snmp_version=$8, ssh_user=$9,
-        ssh_port=$10, monitor_ping=$11, monitor_snmp=$12, monitor_agent=$13, notes=$14
-      WHERE id=$15 RETURNING *
+        ssh_port=$10, monitor_ping=$11, monitor_snmp=$12, monitor_agent=$13,
+        ddns_address=$14, monitor_port=$15, notes=$16
+      WHERE id=$17 RETURNING *
     `, [name, description||"", location||"", device_type||"other", ip_address||null,
         tags||[], snmp_community||"public", snmp_version||"2c", ssh_user||null,
         ssh_port||22, monitor_ping!==false, monitor_snmp||false,
-        monitor_agent!==false, notes||"", req.params.id]);
+        monitor_agent!==false, ddns_address||"", parseInt(monitor_port)||0,
+        notes||"", req.params.id]);
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -580,30 +586,51 @@ app.delete("/triggers/:id", auth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/agent/devices", async (req, res) => {
+  const token = req.headers["x-device-token"];
+  if (!token) return res.status(401).json({ error: "Token required" });
+  try {
+    const dr = await pool.query("SELECT client_id FROM devices WHERE token=$1", [token]);
+    if (dr.rows.length === 0) return res.status(401).json({ error: "Invalid token" });
+    const cid = dr.rows[0].client_id;
+    const devices = await pool.query(
+      "SELECT id, name, ip_address, ddns_address, monitor_port, monitor_ping FROM devices WHERE client_id=$1",
+      [cid]
+    );
+    res.json(devices.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Metrics ───────────────────────────────────────────────────
 app.post("/metrics", metricsLimiter, async (req, res) => {
   const deviceToken = req.headers["x-device-token"] || req.body.device_token;
   const { host, cpu, memory, disk_used, disk_total, disk_percent,
           net_rx_bytes, net_tx_bytes, latency_ms, uptime_seconds,
-          load_avg, processes, temperature } = req.body;
+          load_avg, processes, temperature, device_id, status } = req.body;
   if (!host || cpu === undefined || memory === undefined)
     return res.status(400).json({ error: "host, cpu, memory required" });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    let deviceId = null;
+    let targetDeviceId = null;
     let clientId = null;
+
     if (deviceToken) {
       const dr = await client.query("SELECT id, client_id FROM devices WHERE token=$1", [deviceToken]);
       if (dr.rows.length > 0) {
-        deviceId = dr.rows[0].id;
         clientId = dr.rows[0].client_id;
+        // Se o corpo enviou um device_id específico (ex: sub-dispositivo monitorado pelo agente)
+        targetDeviceId = device_id || dr.rows[0].id;
+        
+        // Atualiza o status do dispositivo (seja o principal ou o monitorado)
+        const deviceStatus = status || 'online';
         await client.query(
-          "UPDATE devices SET last_seen=NOW(), hostname=$1, status='online' WHERE id=$2",
-          [host, deviceId]
+          "UPDATE devices SET last_seen=NOW(), status=$1 WHERE id=$2 AND (id=$3 OR client_id=$4)",
+          [deviceStatus, targetDeviceId, dr.rows[0].id, clientId]
         );
       }
     }
+
     const hr = await client.query(
       "INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id",
       [host]
@@ -612,14 +639,14 @@ app.post("/metrics", metricsLimiter, async (req, res) => {
       INSERT INTO metrics (time,host_id,host,device_id,cpu,memory,disk_used,disk_total,
         disk_percent,net_rx_bytes,net_tx_bytes,latency_ms,uptime_seconds,load_avg,processes,temperature)
       VALUES (NOW(),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-    `, [hr.rows[0].id, host, deviceId, cpu, memory, disk_used||0, disk_total||0,
+    `, [hr.rows[0].id, host, targetDeviceId, cpu, memory, disk_used||0, disk_total||0,
         disk_percent||0, net_rx_bytes||0, net_tx_bytes||0, latency_ms||0,
         uptime_seconds||0, load_avg||0, processes||0, temperature||0]);
     await client.query("COMMIT");
     fetch(`${WEBSOCKET_URL}/publish`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ host, cpu, memory, disk_percent: disk_percent||0,
-        latency_ms: latency_ms||0, device_id: deviceId, client_id: clientId,
+        latency_ms: latency_ms||0, device_id: targetDeviceId, client_id: clientId,
         time: new Date().toISOString() }),
     }).catch(() => {});
     res.status(201).json({ ok: true });
