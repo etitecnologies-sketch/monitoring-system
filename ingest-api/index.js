@@ -503,6 +503,12 @@ app.put("/devices/:id", auth, async (req, res) => {
         ssh_port||22, monitor_ping!==false, monitor_snmp||false,
         monitor_agent!==false, ddns_address||"", parseInt(monitor_port)||0,
         notes||"", req.params.id]);
+
+    // Executa o monitoramento cloud IMEDIATAMENTE após salvar
+    if (ddns_address && monitor_port) {
+      setTimeout(() => cloudMonitor(), 1000);
+    }
+
     res.json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
