@@ -45,17 +45,37 @@ async function initDB() {
   try {
     logger("INFO", "Initializing database schema...");
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS hosts (
-          id         SERIAL PRIMARY KEY,
-          name       TEXT NOT NULL UNIQUE,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      CREATE TABLE IF NOT EXISTS clients (
+          id                SERIAL PRIMARY KEY,
+          name              TEXT NOT NULL UNIQUE,
+          document          TEXT    DEFAULT '',
+          email             TEXT    DEFAULT '',
+          phone             TEXT    DEFAULT '',
+          address           TEXT    DEFAULT '',
+          city              TEXT    DEFAULT '',
+          state             TEXT    DEFAULT '',
+          plan              TEXT    DEFAULT 'basic',
+          status            TEXT    DEFAULT 'active',
+          telegram_token    TEXT    DEFAULT '',
+          telegram_chat_id  TEXT    DEFAULT '',
+          alert_email       TEXT    DEFAULT '',
+          notes             TEXT    DEFAULT '',
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
       CREATE TABLE IF NOT EXISTS users (
           id            SERIAL PRIMARY KEY,
           username      TEXT NOT NULL UNIQUE,
           password_hash TEXT NOT NULL,
+          role          TEXT NOT NULL DEFAULT 'client',
+          client_id     INT  REFERENCES clients(id) ON DELETE CASCADE,
           created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS hosts (
+          id         SERIAL PRIMARY KEY,
+          name       TEXT NOT NULL UNIQUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
       CREATE TABLE IF NOT EXISTS devices (
@@ -63,6 +83,10 @@ async function initDB() {
           name          TEXT NOT NULL,
           hostname      TEXT UNIQUE,
           token         TEXT NOT NULL UNIQUE,
+          client_id     INT  REFERENCES clients(id) ON DELETE CASCADE,
+          ip_address    TEXT    DEFAULT '',
+          device_type   TEXT    DEFAULT 'server',
+          tags          TEXT[]  DEFAULT '{}',
           description   TEXT    DEFAULT '',
           location      TEXT    DEFAULT '',
           status        TEXT    DEFAULT 'pending',
@@ -71,12 +95,18 @@ async function initDB() {
       );
 
       CREATE TABLE IF NOT EXISTS metrics (
+          id              BIGSERIAL PRIMARY KEY,
           time            TIMESTAMPTZ      NOT NULL,
+          host_id         INT              REFERENCES hosts(id) ON DELETE CASCADE,
           host            TEXT             NOT NULL,
           device_id       INT              REFERENCES devices(id) ON DELETE SET NULL,
           cpu             DOUBLE PRECISION NOT NULL DEFAULT 0,
           memory          DOUBLE PRECISION NOT NULL DEFAULT 0,
+          disk_used       BIGINT           NOT NULL DEFAULT 0,
+          disk_total      BIGINT           NOT NULL DEFAULT 0,
           disk_percent    DOUBLE PRECISION NOT NULL DEFAULT 0,
+          net_rx_bytes    BIGINT           NOT NULL DEFAULT 0,
+          net_tx_bytes    BIGINT           NOT NULL DEFAULT 0,
           latency_ms      DOUBLE PRECISION NOT NULL DEFAULT 0,
           uptime_seconds  BIGINT           NOT NULL DEFAULT 0,
           load_avg        DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -85,18 +115,22 @@ async function initDB() {
       );
 
       CREATE TABLE IF NOT EXISTS triggers (
-          id         SERIAL PRIMARY KEY,
-          name       TEXT    NOT NULL,
-          expression TEXT    NOT NULL,
-          threshold  FLOAT   NOT NULL,
-          enabled    BOOLEAN NOT NULL DEFAULT TRUE,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          id          SERIAL PRIMARY KEY,
+          name        TEXT    NOT NULL,
+          expression  TEXT    NOT NULL,
+          threshold   FLOAT   NOT NULL,
+          enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+          device_type TEXT,
+          tags        TEXT[]  DEFAULT '{}',
+          client_id   INT     REFERENCES clients(id) ON DELETE CASCADE,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
       CREATE TABLE IF NOT EXISTS alerts (
           id          SERIAL PRIMARY KEY,
           trigger_id  INT   REFERENCES triggers(id) ON DELETE CASCADE,
           device_id   INT   REFERENCES devices(id) ON DELETE SET NULL,
+          client_id   INT   REFERENCES clients(id) ON DELETE CASCADE,
           host        TEXT  NOT NULL,
           expression  TEXT  NOT NULL,
           value       FLOAT NOT NULL,
@@ -106,6 +140,23 @@ async function initDB() {
       );
     `);
     logger("INFO", "Database schema ready");
+    
+    // Check for missing columns in existing tables (for migrations)
+    await pool.query(`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='role') THEN
+          ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'client';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='client_id') THEN
+          ALTER TABLE users ADD COLUMN client_id INT REFERENCES clients(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='devices' AND column_name='client_id') THEN
+          ALTER TABLE devices ADD COLUMN client_id INT REFERENCES clients(id) ON DELETE CASCADE;
+        END IF;
+      END $$;
+    `);
+    logger("INFO", "Database migrations complete");
   } catch (e) {
     logger("ERROR", "Failed to initialize database", { error: e.message });
   }
