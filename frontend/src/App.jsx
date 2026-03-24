@@ -809,8 +809,8 @@ function DevicesPage({ userRole, userClientId }) {
 
             <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 12, marginBottom: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 10, color: "#4a6080" }}>ENDEREÇO</span>
-                <span style={{ fontSize: 10, color: "#e2e8f0", fontFamily: "monospace" }}>{d.ddns_address || d.ip_address || "—"}</span>
+                <span style={{ fontSize: 10, color: "#4a6080" }}>{d.ddns_address ? "DDNS" : "IP / VPN"}</span>
+                <span style={{ fontSize: 10, color: d.ddns_address ? "#38bdf8" : "#a78bfa", fontFamily: "monospace", fontWeight: 700 }}>{d.ddns_address || d.ip_address || "—"}</span>
               </div>
               {d.monitor_port > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>

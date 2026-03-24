@@ -83,5 +83,30 @@ services:
     depends_on:
       - ingest-api
       - websocket
+  
+  vpn-server:
+    image: linuxserver/wireguard:latest
+    container_name: vpn-server
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Sao_Paulo
+      - SERVERURL=auto # O sistema detectará o IP público
+      - SERVERPORT=51820
+      - PEERS=camera-site-1,tecnico-admin
+      - PEERDNS=auto
+      - INTERNAL_CONTROL_CONFIGS=true
+      - ALLOWEDIPS=0.0.0.0/0
+    volumes:
+      - vpn_config:/config
+      - /lib/modules:/lib/modules
+    ports:
+      - "51820:51820/udp"
+    restart: unless-stopped
+
 volumes:
   db_data:
+  vpn_config:
