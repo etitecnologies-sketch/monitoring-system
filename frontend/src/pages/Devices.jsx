@@ -82,6 +82,7 @@ function DeviceModal({ device, onClose, onSave }) {
   const [port, setPort]     = useState(device?.monitor_port || "");
   const [ping, setPing]     = useState(device?.monitor_ping !== false);
   const [agent, setAgent]   = useState(device?.monitor_agent !== false);
+  const [tags, setTags]     = useState(device?.tags?.join(", ") || "");
   
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -109,26 +110,28 @@ function DeviceModal({ device, onClose, onSave }) {
       monitor_port: parseInt(port) || 0,
       monitor_ping: ping,
       monitor_agent: agent,
+      tags: tags.split(",").map(t => t.trim()).filter(t => t !== ""),
       notes: device?.notes || ""
     };
     
     try {
+      console.log("[Save] Sending data:", data);
       if (device) {
         const res = await api.updateDevice(device.id, data);
-        console.log("[Save] Update result:", res);
+        console.log("[Save] Update response:", res);
       } else {
         const res = await api.createDevice(data);
-        console.log("[Save] Create result:", res);
+        console.log("[Save] Create response:", res);
         setNewToken(res.token);
         onSave(res);
         setLoading(false);
         return;
       }
       onSave();
-      onClose(); // Fecha o modal explicitamente após salvar com sucesso
+      onClose();
     } catch (err) {
-      console.error("[Save] Error:", err);
-      alert("Erro ao salvar: " + err.message);
+      console.error("[Save] Error detail:", err);
+      alert("Erro ao salvar: " + (err.data?.error || err.message));
     } finally {
       setLoading(false);
     }
@@ -156,7 +159,7 @@ function DeviceModal({ device, onClose, onSave }) {
 
   return (
     <div style={S.overlay} onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div style={{...S.modal, maxWidth: 600}}>
+      <div style={{...S.modal, maxWidth: 700}}>
         <div style={S.modalHead}>
           <span style={S.modalTitle}>{device ? `Edit: ${device.name}` : "Add new device"}</span>
           <button onClick={onClose} style={S.closeBtn}>✕</button>
@@ -168,112 +171,84 @@ function DeviceModal({ device, onClose, onSave }) {
               ✓ Device created! Save this token — it won't be shown again.
             </div>
             <TokenBox token={newToken} />
-            <p style={{ fontSize:12, color:"#64748b", margin:"8px 0 0" }}>
-              Use this token in your agent via <code>X-Device-Token</code> header or <code>device_token</code> field.
-            </p>
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+          {/* Coluna 1: Básico */}
           <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
             <div style={S.formGroup}>
-              <label style={S.label}>Device name *</label>
-              <input style={S.input} value={name} onChange={e=>setName(e.target.value)}
-                placeholder="e.g. Camera Portaria" />
+              <label style={S.label}>Nome do Dispositivo *</label>
+              <input style={S.input} value={name} onChange={e=>setName(e.target.value)} placeholder="Ex: Camera Portaria" />
             </div>
             <div style={S.formGroup}>
-              <label style={S.label}>Type</label>
+              <label style={S.label}>Tipo</label>
               <select style={S.input} value={type} onChange={e=>setType(e.target.value)}>
                 {deviceTypes.map(t => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
               </select>
             </div>
             <div style={S.formGroup}>
-              <label style={S.label}>Location</label>
-              <input style={S.input} value={loc} onChange={e=>setLoc(e.target.value)}
-                placeholder="e.g. Portaria Principal" />
+              <label style={S.label}>Localização</label>
+              <input style={S.input} value={loc} onChange={e=>setLoc(e.target.value)} placeholder="Ex: Matriz / SP" />
             </div>
             <div style={S.formGroup}>
-              <label style={S.label}>Description</label>
-              <input style={S.input} value={desc} onChange={e=>setDesc(e.target.value)}
-                placeholder="e.g. Intelbras VIP 1230" />
+              <label style={S.label}>Tags (separadas por vírgula)</label>
+              <input style={S.input} value={tags} onChange={e=>setTags(e.target.value)} placeholder="camera, intelbras, porto" />
             </div>
           </div>
 
+          {/* Coluna 2: Conectividade */}
           <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
             <div style={S.formGroup}>
-              <label style={S.label}>IP Local (Opcional)</label>
-              <input style={S.input} value={ip} onChange={e=>setIp(e.target.value)}
-                placeholder="192.168.1.10" />
+              <label style={S.label}>Endereço DDNS / No-IP</label>
+              <input style={S.input} value={ddns} onChange={e=>setDdns(e.target.value)} placeholder="exemplo.ddns-intelbras.com.br" />
             </div>
             <div style={S.formGroup}>
-              <label style={S.label}>DDNS / DNS (Remoto)</label>
-              <input style={S.input} value={ddns} onChange={e=>setDdns(e.target.value)}
-                placeholder="ex: minha-casa.ddns-intelbras.com.br" />
+              <label style={S.label}>Porta de Serviço (TCP)</label>
+              <input style={S.input} type="number" value={port} onChange={e=>setPort(e.target.value)} placeholder="37777" />
             </div>
             <div style={S.formGroup}>
-              <label style={S.label}>Porta de Monitoramento (TCP)</label>
-              <input style={S.input} type="number" value={port} onChange={e=>setPort(e.target.value)}
-                placeholder="80, 37777, 8000" />
-              <small style={{fontSize: 10, color: "#64748b"}}>Porta TCP aberta no roteador (NAT)</small>
+              <label style={S.label}>IP Local</label>
+              <input style={S.input} value={ip} onChange={e=>setIp(e.target.value)} placeholder="192.168.0.102" />
             </div>
             
-            <div style={{ display: "flex", gap: 15, marginTop: 10 }}>
-              <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, cursor: "pointer", textTransform: "none" }}>
-                <input type="checkbox" checked={ping} onChange={e=>setPing(e.target.checked)} />
-                Monitorar Ping
-              </label>
-              <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, cursor: "pointer", textTransform: "none" }}>
-                <input type="checkbox" checked={agent} onChange={e=>setAgent(e.target.checked)} />
-                Monitorar Agente
-              </label>
+            <div style={{ background: "rgba(99, 102, 241, 0.05)", padding: 12, borderRadius: 10, border: "1px solid rgba(99, 102, 241, 0.1)" }}>
+              <label style={{ ...S.label, marginBottom: 8, display: "block" }}>Opções de Monitoramento</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", textTransform: "none" }}>
+                  <input type="checkbox" checked={ping} onChange={e=>setPing(e.target.checked)} /> Ping
+                </label>
+                <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", textTransform: "none" }}>
+                  <input type="checkbox" checked={agent} onChange={e=>setAgent(e.target.checked)} /> Agente
+                </label>
+              </div>
             </div>
           </div>
         </div>
 
         {device && (
-          <div style={{ borderTop: "1px solid #1e1e2e", paddingTop: 15 }}>
+          <div style={{ borderTop: "1px solid #1e1e2e", paddingTop: 15, marginTop: 5 }}>
              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <label style={S.label}>Conexão Cloud</label>
-                <button 
-                  onClick={testConn} 
-                  disabled={testing || !ddns || !port}
-                  style={{...S.editBtn, background: "#10b98120", borderColor: "#10b98140", color: "#10b981"}}
-                >
-                  {testing ? "Testando..." : "⚡ Testar Conexão Agora"}
+                <label style={S.label}>Teste de Nuvem</label>
+                <button onClick={testConn} disabled={testing || !ddns || !port} style={{...S.editBtn, background: "#10b98120", borderColor: "#10b98140", color: "#10b981"}}>
+                  {testing ? "Testando..." : "⚡ Testar Agora"}
                 </button>
              </div>
              {testResult && (
-               <div style={{ 
-                 marginTop: 10, 
-                 padding: 10, 
-                 borderRadius: 8, 
-                 fontSize: 12,
-                 background: testResult.alive ? "#064e3b" : "#450a0a",
-                 color: testResult.alive ? "#34d399" : "#f87171",
-                 border: `1px solid ${testResult.alive ? "#05966940" : "#dc262640"}`
-               }}>
+               <div style={{ marginTop: 10, padding: 10, borderRadius: 8, fontSize: 12, background: testResult.alive ? "#064e3b" : "#450a0a", color: testResult.alive ? "#34d399" : "#f87171" }}>
                  {testResult.alive ? "✅ " : "❌ "} {testResult.message}
                </div>
              )}
           </div>
         )}
 
-        {device && !newToken && (
-          <div style={{ borderTop: "1px solid #1e1e2e", paddingTop: 15 }}>
-            <label style={S.label}>Agent token</label>
-            <TokenBox token={device.token || "hidden"} />
-            <button onClick={regenToken} style={S.regenBtn}>🔄 Regenerate token</button>
-          </div>
-        )}
-
         <div style={S.modalFoot}>
-          <button onClick={onClose} style={S.cancelBtn}>Cancel</button>
+          <button onClick={onClose} style={S.cancelBtn}>Cancelar</button>
           {!newToken && (
             <button onClick={save} disabled={loading||!name.trim()} style={S.saveBtn}>
-              {loading ? "Saving..." : device ? "Save changes" : "Create device"}
+              {loading ? "Salvando..." : "Salvar Alterações"}
             </button>
           )}
-          {newToken && <button onClick={onClose} style={S.saveBtn}>Done</button>}
         </div>
       </div>
     </div>
