@@ -947,22 +947,25 @@ async function cloudMonitor() {
       const check = () => new Promise((resolve) => {
         const socket = new net.Socket();
         const start = Date.now();
-        socket.setTimeout(5000); // 5 segundos de timeout
+        socket.setTimeout(5000);
 
         socket.on("connect", () => {
           const lat = Date.now() - start;
           socket.destroy();
-          resolve({ alive: true, lat });
+          resolve({ alive: true, lat, error: null });
         });
 
         socket.on("timeout", () => {
           socket.destroy();
-          resolve({ alive: false, lat: 0 });
+          resolve({ alive: false, lat: 0, error: "TIMEOUT (Porta fechada ou sem resposta)" });
         });
 
         socket.on("error", (err) => {
           socket.destroy();
-          resolve({ alive: false, lat: 0 });
+          let msg = err.code;
+          if (err.code === "ECONNREFUSED") msg = "REFUSED (Câmera recusou a conexão)";
+          if (err.code === "ENOTFOUND") msg = "NOTFOUND (No-IP incorreto)";
+          resolve({ alive: false, lat: 0, error: msg });
         });
 
         socket.connect(monitor_port, ddns_address);
@@ -970,11 +973,12 @@ async function cloudMonitor() {
 
       const result = await check();
       const status = result.alive ? 'online' : 'offline';
+      const errorMsg = result.error || "";
       
-      // 1. Atualiza o status no banco (tabela devices)
+      // 1. Atualiza o status e a nota de erro no banco
       await pool.query(
-        "UPDATE devices SET last_seen=NOW(), status=$1 WHERE id=$2",
-        [status, id]
+        "UPDATE devices SET last_seen=NOW(), status=$1, notes=LEFT($2, 200) WHERE id=$3",
+        [status, errorMsg ? `Cloud Error: ${errorMsg}` : "", id]
       );
 
       // 2. Garante que o host existe na tabela hosts
@@ -983,14 +987,13 @@ async function cloudMonitor() {
         [name]
       );
 
-      // 3. Registra métrica básica na tabela metrics
+      // 3. Registra métrica básica
       await pool.query(`
         INSERT INTO metrics (time, host_id, host, device_id, cpu, memory, latency_ms, status)
         VALUES (NOW(), $1, $2, $3, 0, 0, $4, $5)
       `, [hr.rows[0].id, name, id, result.lat, status]);
 
-      // 4. Envia atualização em tempo real via WebSocket
-      logger("INFO", `Cloud Status Update: ${name} is ${status}`);
+      // 4. Envia atualização via WebSocket
       fetch(`${WEBSOCKET_URL}/publish`, {
         method: "POST", 
         headers: { "Content-Type": "application/json" },
@@ -998,25 +1001,56 @@ async function cloudMonitor() {
           host: name, 
           cpu: 0, 
           memory: 0, 
-          disk_percent: 0,
           latency_ms: result.lat, 
           device_id: id, 
           client_id: client_id,
           status: status,
+          error: errorMsg,
           time: new Date().toISOString() 
         }),
       }).catch(() => {});
 
       if (result.alive) {
-        logger("INFO", `[CloudMonitor] ✓ ${name} (${ddns_address}:${monitor_port}) está ONLINE (${result.lat}ms)`);
+        logger("INFO", `[CloudMonitor] ✓ ${name} (${ddns_address}:${monitor_port}) ONLINE`);
       } else {
-        logger("WARN", `[CloudMonitor] ❌ ${name} (${ddns_address}:${monitor_port}) está OFFLINE`);
+        logger("WARN", `[CloudMonitor] ❌ ${name} (${ddns_address}:${monitor_port}) OFFLINE: ${errorMsg}`);
       }
     }
   } catch (e) {
     logger("ERROR", `[CloudMonitor] Erro: ${e.message}`);
   }
 }
+
+// Rota de teste manual para o botão no frontend
+app.post("/devices/:id/test", auth, async (req, res) => {
+  try {
+    const dr = await pool.query("SELECT ddns_address, monitor_port FROM devices WHERE id=$1", [req.params.id]);
+    if (dr.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+    
+    const { ddns_address, monitor_port } = dr.rows[0];
+    if (!ddns_address || !monitor_port) return res.status(400).json({ error: "DDNS e Porta não configurados" });
+
+    const socket = new net.Socket();
+    socket.setTimeout(5000);
+    
+    socket.on("connect", () => {
+      socket.destroy();
+      res.json({ alive: true, message: "Conexão estabelecida com sucesso!" });
+    });
+
+    socket.on("timeout", () => {
+      socket.destroy();
+      res.json({ alive: false, message: "Tempo esgotado. A porta parece estar fechada no seu roteador." });
+    });
+
+    socket.on("error", (err) => {
+      socket.destroy();
+      res.json({ alive: false, message: `Erro de conexão: ${err.code}` });
+    });
+
+    socket.connect(monitor_port, ddns_address);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // Inicia o monitoramento a cada 1 minuto
 setInterval(cloudMonitor, 60000);

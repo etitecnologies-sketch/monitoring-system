@@ -721,6 +721,15 @@ function DevicesPage({ userRole, userClientId }) {
 
   const del = async (id) => { if (!confirm("Remover?")) return; await api(`/devices/${id}`, { method: "DELETE" }); load(); };
   const regenToken = async (id) => { const d = await api(`/devices/${id}/regenerate-token`, { method: "POST" }); setTokenModal(d.token); load(); };
+  const testConn = async (id) => {
+    try {
+      const res = await api(`/devices/${id}/test`, { method: "POST" });
+      alert(res.message);
+      load();
+    } catch (e) {
+      alert("Erro ao testar: " + (e.error || e.message));
+    }
+  };
 
   const filtered = devices.filter((d) => {
     if (filter.type && d.device_type !== filter.type) return false;
@@ -779,16 +788,24 @@ function DevicesPage({ userRole, userClientId }) {
                   {d.ddns_address && <div style={{ color: "#38bdf8", marginTop: 2 }}>{d.ddns_address}:{d.monitor_port}</div>}
                 </td>
                 {userRole === "superadmin" && <td style={S.td}><span style={{ fontSize: 10, color: "#38bdf8" }}>{d.client_name||"—"}</span></td>}
-                <td style={S.td}><span style={S.badge(d.status==="online"?"#22c55e":"#ef4444")}>{d.status==="online"?"● on":"● off"}</span></td>
+                <td style={S.td}>
+                  <span style={S.badge(d.status==="online"?"#22c55e":"#ef4444")}>{d.status==="online"?"● on":"● off"}</span>
+                  {d.status!=="online" && d.notes && (
+                    <div style={{ fontSize: 8, color: "#64748b", marginTop: 4, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis" }} title={d.notes}>
+                      {d.notes.replace("Cloud Error: ", "")}
+                    </div>
+                  )}
+                </td>
                 <td style={S.td}>{d.last_cpu!=null?`${d.last_cpu.toFixed(1)}%`:"—"}</td>
                 <td style={S.td}>{d.last_memory!=null?`${d.last_memory.toFixed(1)}%`:"—"}</td>
                 <td style={S.td}>{d.last_latency!=null?`${Math.round(d.last_latency)}ms`:"—"}</td>
                 <td style={S.td}>{(d.tags||[]).map((t) => <span key={t} style={S.tag}>#{t}</span>)}</td>
                 <td style={S.td}>
                   <div style={{ display: "flex", gap: 4 }}>
-                    <button style={S.btnSm()} onClick={() => setModal(d)}>✏️</button>
-                    <button style={S.btnSm()} onClick={() => regenToken(d.id)}>🔑</button>
-                    <button style={S.btnSm("danger")} onClick={() => del(d.id)}>🗑️</button>
+                    <button style={S.btnSm()} onClick={() => setModal(d)} title="Editar">✏️</button>
+                    <button style={S.btnSm()} onClick={() => testConn(d.id)} title="Testar Conexão">📡</button>
+                    <button style={S.btnSm()} onClick={() => regenToken(d.id)} title="Gerar Token">🔑</button>
+                    <button style={S.btnSm("danger")} onClick={() => del(d.id)} title="Excluir">🗑️</button>
                   </div>
                 </td>
               </tr>
