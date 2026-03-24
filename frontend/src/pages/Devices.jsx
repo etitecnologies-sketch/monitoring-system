@@ -108,7 +108,8 @@ function DeviceModal({ device, onClose, onSave }) {
       ddns_address: ddns,
       monitor_port: parseInt(port) || 0,
       monitor_ping: ping,
-      monitor_agent: agent
+      monitor_agent: agent,
+      notes: device?.notes || ""
     };
     
     try {
