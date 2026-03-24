@@ -1,11 +1,11 @@
 // ── Config ────────────────────────────────────────────────
-const API_BASE = window.location.hostname === "localhost"
-  ? "http://localhost:3000"
-  : ""; // Em produção usa URLs relativas via Nginx proxy
+// O Railway injeta VITE_API_URL se você definir nas variáveis de ambiente do frontend
+const API_BASE = import.meta.env.VITE_API_URL || 
+  (window.location.hostname === "localhost" ? "http://localhost:3000" : "");
 
-const WS_URL = window.location.hostname === "localhost"
-  ? "http://localhost:3001"
-  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}/socket.io`;
+const WS_URL = import.meta.env.VITE_WS_URL || 
+  (window.location.hostname === "localhost" ? "http://localhost:3001" : 
+  `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}/socket.io`);
 
 const DEFAULT_TIMEOUT = 10000; // 10s
 const MAX_RETRIES = 2;

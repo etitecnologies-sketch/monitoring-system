@@ -1,47 +1,44 @@
-# Deploy no Railway 🚀
+# Deploy no Railway (Modo Serviços Separados) 🚀
 
-Este sistema está pronto para rodar 24/7 no Railway. O projeto utiliza múltiplos serviços (frontend, backend, banco de dados) que o Railway gerencia automaticamente através do arquivo `docker-compose.yml`.
+Para o **NexusWatch Pro** rodar com máxima estabilidade 24/7, recomendamos criar serviços separados no Railway para cada parte do sistema.
 
-## Passo a passo para Deploy
+## 1. Banco de Dados (TimescaleDB)
+- **New** -> **Database** -> **PostgreSQL**.
+- O Railway adicionará o plugin TimescaleDB automaticamente se disponível ou use uma imagem Docker personalizada se preferir.
+- Anote a `DATABASE_URL`.
 
-### 1. Preparar o Repositório
-- Suba este código para um repositório no seu GitHub.
-- Certifique-se de que o `.gitignore` está ignorando arquivos `.env`.
+## 2. Ingest API (O Coração)
+- **New** -> **GitHub Repo** -> Selecione o repo.
+- Em **Settings** -> **Root Directory**, coloque: `ingest-api`.
+- **Variables**:
+  - `DATABASE_URL`: (Vem do banco de dados)
+  - `JWT_SECRET`: Uma senha forte
+  - `CORS_ORIGIN`: `*`
+  - `WEBSOCKET_URL`: URL interna do seu serviço WebSocket (ex: `http://websocket:3001`)
 
-### 2. Conectar ao Railway
-- Acesse [railway.app](https://railway.app) e faça login com GitHub.
-- Clique em **"New Project"** → **"Deploy from GitHub repo"**.
-- Selecione o repositório deste projeto.
+## 3. WebSocket Server (Real-time)
+- **New** -> **GitHub Repo** -> Selecione o repo.
+- Em **Settings** -> **Root Directory**, coloque: `websocket-server`.
+- **Variables**:
+  - `PORT`: `3001`
 
-### 3. Configuração Automática
-- O Railway detectará o arquivo `docker-compose.yml` e criará todos os serviços necessários:
-  - `db` (TimescaleDB/PostgreSQL)
-  - `ingest-api` (API Principal)
-  - `websocket` (Real-time)
-  - `processor` (Processamento de alertas e dados)
-  - `frontend` (Painel Web)
+## 4. Frontend (Painel Web)
+- **New** -> **GitHub Repo** -> Selecione o repo.
+- Em **Settings** -> **Root Directory**, coloque: `frontend`.
+- **Variables**:
+  - `VITE_API_URL`: A URL pública da sua **Ingest API** (ex: `https://api-production.up.railway.app`)
+  - `VITE_WS_URL`: A URL pública do seu **WebSocket** (ex: `https://ws-production.up.railway.app`)
 
-### 4. Configurar Variáveis de Ambiente
-No painel do Railway, você precisará definir algumas variáveis globais ou específicas para os serviços (em **Shared Variables** ou no serviço correspondente):
+## 5. Processor (Alertas)
+- **New** -> **GitHub Repo** -> Selecione o repo.
+- Em **Settings** -> **Root Directory**, coloque: `processor`.
+- **Variables**:
+  - `DATABASE_URL`: (Mesma do banco)
+  - Configurações de SMTP/Telegram se desejar alertas.
 
-```env
-DB_PASSWORD=uma-senha-segura-aqui
-JWT_SECRET=uma-string-longa-e-aleatoria
-CORS_ORIGIN=*
-# O Railway injeta DATABASE_URL automaticamente se você usar o serviço de banco dele
-```
+---
 
-### 5. Configurações Específicas
-- **Frontend**: O Railway gera uma URL pública para o serviço `frontend`. Certifique-se de que o Nginx no frontend está configurado para apontar para os nomes internos dos serviços (já está configurado como `ingest-api:3000`).
-- **WebSocket**: O frontend tentará conectar no WebSocket via URL relativa em produção.
-
-## Por que Railway?
-- **Sempre Online**: Ideal para monitoramento 24h.
-- **Banco de Dados Real**: Oferece PostgreSQL/TimescaleDB persistente.
-- **Escalabilidade**: Você pode escalar cada serviço individualmente se necessário.
-- **SSL Automático**: Já vem com HTTPS configurado por padrão.
-
-## Dicas para GitHub
-- Nunca suba o arquivo `.env` com senhas reais.
-- Use o `.env.example` como referência para outros usuários.
-- O arquivo `README.md` principal já contém instruções de instalação local.
+### Por que separar?
+1. **Logs Individuais**: Se a API cair, você sabe exatamente o porquê sem afetar o Frontend.
+2. **Escalabilidade**: Você pode dar mais memória apenas para o Banco ou para a API.
+3. **Economia**: O Railway só cobra pelo que cada serviço pequeno consome.
