@@ -1,7 +1,6 @@
 // ── Config ────────────────────────────────────────────────
-// O Railway injeta VITE_API_URL se você definir nas variáveis de ambiente do frontend
-const API_BASE = import.meta.env.VITE_API_URL || 
-  (window.location.hostname === "localhost" ? "http://localhost:3000" : "");
+// Tenta usar a variável de ambiente, senão usa URL relativa (que o Nginx fará o proxy)
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 const WS_URL = import.meta.env.VITE_WS_URL || 
   (window.location.hostname === "localhost" ? "http://localhost:3001" : 
