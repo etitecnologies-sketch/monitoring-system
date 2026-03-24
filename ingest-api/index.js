@@ -466,12 +466,9 @@ app.post("/devices", auth, async (req, res) => {
   } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
-  // client_id: superadmin pode especificar, client usa o seu
-  const cid = req.user.role === "superadmin"
-    ? (client_id || null)
-    : req.user.client_id;
-
+  const cid = req.user.role === "superadmin" ? (client_id || null) : req.user.client_id;
   const token = crypto.randomBytes(32).toString("hex");
+
   try {
     const r = await pool.query(`
       INSERT INTO devices (name, description, location, token, device_type, ip_address, tags,
@@ -483,17 +480,14 @@ app.post("/devices", auth, async (req, res) => {
         monitor_ping!==false, monitor_snmp||false, monitor_agent!==false, ddns_address||"",
         parseInt(monitor_port)||0, notes||"", cid]);
 
-    // Executa o monitoramento cloud em background total
-    if (ddns_address && monitor_port) {
-      setImmediate(() => {
-        cloudMonitor(r.rows[0].id).catch(err => logger("ERROR", "Background Monitor Error", err));
-      });
-    }
+    res.status(201).json(r.rows[0]);
 
-    return res.status(201).json(r.rows[0]);
+    if (ddns_address && monitor_port) {
+      setImmediate(() => cloudMonitor(r.rows[0].id).catch(err => logger("ERROR", "Background Monitor Error", err)));
+    }
   } catch (e) { 
     logger("ERROR", "Create Device Error", e);
-    return res.status(500).json({ error: e.message }); 
+    if (!res.headersSent) res.status(500).json({ error: e.message }); 
   }
 });
 
@@ -521,18 +515,14 @@ app.put("/devices/:id", auth, async (req, res) => {
 
     if (r.rows.length === 0) return res.status(404).json({ error: "Device not found" });
 
-    // Executa o monitoramento cloud em background total
-    if (ddns_address && monitor_port) {
-      setImmediate(() => {
-        cloudMonitor(r.rows[0].id).catch(err => logger("ERROR", "Background Monitor Error", err));
-      });
-    }
+    res.json(r.rows[0]);
 
-    logger("INFO", "Device updated successfully", { id: req.params.id });
-    return res.json(r.rows[0]);
+    if (ddns_address && monitor_port) {
+      setImmediate(() => cloudMonitor(r.rows[0].id).catch(err => logger("ERROR", "Background Monitor Error", err)));
+    }
   } catch (e) { 
     logger("ERROR", "Update Device Error", { id: req.params.id, error: e.message });
-    return res.status(500).json({ error: e.message }); 
+    if (!res.headersSent) res.status(500).json({ error: e.message }); 
   }
 });
 
