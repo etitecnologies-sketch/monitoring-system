@@ -292,7 +292,13 @@ function AuthPage({ onLogin }) {
   const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api("/auth/status").then((d) => setStep(d.setupDone ? "login" : "setup")).catch(() => setStep("login"));
+    api("/auth/status")
+      .then((d) => setStep(d.setupDone ? "login" : "setup"))
+      .catch((e) => {
+        console.error("API Connection Error:", e);
+        setErr("Não foi possível conectar à API. Verifique a variável VITE_API_URL no Railway.");
+        setStep("login"); // Mantém login mas mostra o erro
+      });
   }, []);
 
   const submit = async () => {
