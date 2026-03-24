@@ -600,7 +600,10 @@ const EMPTY_DEVICE = {
 };
 
 function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose }) {
-  const [form, setForm] = useState(device ? { ...device, tags: device.tags || [] } : { ...EMPTY_DEVICE });
+  const [form, setForm] = useState(device 
+    ? { ...EMPTY_DEVICE, ...device, tags: device.tags || [] } 
+    : { ...EMPTY_DEVICE }
+  );
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -608,11 +611,18 @@ function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose 
   const save = async () => {
     if (!form.name) return setErr("Nome obrigatório");
     setLoading(true); setErr("");
+    
+    // Garante que a porta seja um número inteiro
+    const payload = {
+      ...form,
+      monitor_port: parseInt(form.monitor_port) || 0
+    };
+
     try {
-      if (device?.id) await api(`/devices/${device.id}`, { method: "PUT", body: JSON.stringify(form) });
-      else await api("/devices", { method: "POST", body: JSON.stringify(form) });
+      if (device?.id) await api(`/devices/${device.id}`, { method: "PUT", body: JSON.stringify(payload) });
+      else await api("/devices", { method: "POST", body: JSON.stringify(payload) });
       onSave();
-    } catch (e) { setErr(e.error || "Erro"); }
+    } catch (e) { setErr(e.error || "Erro ao salvar dados"); }
     finally { setLoading(false); }
   };
 
@@ -760,8 +770,14 @@ function DevicesPage({ userRole, userClientId }) {
             {filtered.map((d) => (
               <tr key={d.id}>
                 <td style={S.td}><span title={deviceLabel(d.device_type)} style={{ fontSize: 16 }}>{deviceIcon(d.device_type)}</span></td>
-                <td style={S.td}><div style={{ fontWeight: 700, color: "#f1f5f9" }}>{d.name}</div><div style={{ fontSize: 9, color: "#3a5070" }}>{d.location||"—"}</div></td>
-                <td style={{ ...S.td, fontFamily: "monospace", fontSize: 10 }}>{d.ip_address||"—"}</td>
+                <td style={S.td}>
+                  <div style={{ fontWeight: 700, color: "#f1f5f9" }}>{d.name}</div>
+                  <div style={{ fontSize: 9, color: "#3a5070" }}>{d.location||"—"}</div>
+                </td>
+                <td style={{ ...S.td, fontFamily: "monospace", fontSize: 10 }}>
+                  <div>{d.ip_address||"—"}</div>
+                  {d.ddns_address && <div style={{ color: "#38bdf8", marginTop: 2 }}>{d.ddns_address}:{d.monitor_port}</div>}
+                </td>
                 {userRole === "superadmin" && <td style={S.td}><span style={{ fontSize: 10, color: "#38bdf8" }}>{d.client_name||"—"}</span></td>}
                 <td style={S.td}><span style={S.badge(d.status==="online"?"#22c55e":"#ef4444")}>{d.status==="online"?"● on":"● off"}</span></td>
                 <td style={S.td}>{d.last_cpu!=null?`${d.last_cpu.toFixed(1)}%`:"—"}</td>

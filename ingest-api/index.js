@@ -990,6 +990,7 @@ async function cloudMonitor() {
       `, [hr.rows[0].id, name, id, result.lat, status]);
 
       // 4. Envia atualização em tempo real via WebSocket
+      logger("INFO", `Cloud Status Update: ${name} is ${status}`);
       fetch(`${WEBSOCKET_URL}/publish`, {
         method: "POST", 
         headers: { "Content-Type": "application/json" },
