@@ -40,6 +40,78 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
+// ── Auto-Schema Initialization ───────────────────────────────
+async function initDB() {
+  try {
+    logger("INFO", "Initializing database schema...");
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hosts (
+          id         SERIAL PRIMARY KEY,
+          name       TEXT NOT NULL UNIQUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS users (
+          id            SERIAL PRIMARY KEY,
+          username      TEXT NOT NULL UNIQUE,
+          password_hash TEXT NOT NULL,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS devices (
+          id            SERIAL PRIMARY KEY,
+          name          TEXT NOT NULL,
+          hostname      TEXT UNIQUE,
+          token         TEXT NOT NULL UNIQUE,
+          description   TEXT    DEFAULT '',
+          location      TEXT    DEFAULT '',
+          status        TEXT    DEFAULT 'pending',
+          last_seen     TIMESTAMPTZ,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS metrics (
+          time            TIMESTAMPTZ      NOT NULL,
+          host            TEXT             NOT NULL,
+          device_id       INT              REFERENCES devices(id) ON DELETE SET NULL,
+          cpu             DOUBLE PRECISION NOT NULL DEFAULT 0,
+          memory          DOUBLE PRECISION NOT NULL DEFAULT 0,
+          disk_percent    DOUBLE PRECISION NOT NULL DEFAULT 0,
+          latency_ms      DOUBLE PRECISION NOT NULL DEFAULT 0,
+          uptime_seconds  BIGINT           NOT NULL DEFAULT 0,
+          load_avg        DOUBLE PRECISION NOT NULL DEFAULT 0,
+          processes       INT              NOT NULL DEFAULT 0,
+          temperature     DOUBLE PRECISION NOT NULL DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS triggers (
+          id         SERIAL PRIMARY KEY,
+          name       TEXT    NOT NULL,
+          expression TEXT    NOT NULL,
+          threshold  FLOAT   NOT NULL,
+          enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS alerts (
+          id          SERIAL PRIMARY KEY,
+          trigger_id  INT   REFERENCES triggers(id) ON DELETE CASCADE,
+          device_id   INT   REFERENCES devices(id) ON DELETE SET NULL,
+          host        TEXT  NOT NULL,
+          expression  TEXT  NOT NULL,
+          value       FLOAT NOT NULL,
+          threshold   FLOAT NOT NULL,
+          fired_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          resolved_at TIMESTAMPTZ
+      );
+    `);
+    logger("INFO", "Database schema ready");
+  } catch (e) {
+    logger("ERROR", "Failed to initialize database", { error: e.message });
+  }
+}
+initDB();
+
 const JWT_SECRET = process.env.JWT_SECRET || "changeme-secret-jwt";
 const WEBSOCKET_URL = process.env.WEBSOCKET_URL || "http://websocket:3001";
 
