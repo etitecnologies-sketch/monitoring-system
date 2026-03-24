@@ -186,6 +186,7 @@ async function initDB() {
       ALTER TABLE devices ALTER COLUMN monitor_ping TYPE BOOLEAN USING monitor_ping::boolean;
       ALTER TABLE devices ALTER COLUMN monitor_snmp TYPE BOOLEAN USING monitor_snmp::boolean;
       ALTER TABLE devices ALTER COLUMN monitor_agent TYPE BOOLEAN USING monitor_agent::boolean;
+      ALTER TABLE devices ALTER COLUMN tags TYPE TEXT[] USING tags::text[];
       ALTER TABLE metrics ALTER COLUMN host_id TYPE INT USING host_id::integer;
       ALTER TABLE metrics ALTER COLUMN disk_used TYPE BIGINT USING disk_used::bigint;
       ALTER TABLE metrics ALTER COLUMN disk_total TYPE BIGINT USING disk_total::bigint;
@@ -502,6 +503,9 @@ app.put("/devices/:id", auth, async (req, res) => {
     snmp_community, snmp_version, ssh_user, ssh_port,
     monitor_ping, monitor_snmp, monitor_agent, ddns_address, monitor_port, notes,
   } = req.body;
+  
+  logger("INFO", "Updating device", { id: req.params.id, name });
+
   try {
     const r = await pool.query(`
       UPDATE devices SET name=$1, description=$2, location=$3, device_type=$4,
@@ -515,6 +519,8 @@ app.put("/devices/:id", auth, async (req, res) => {
         monitor_agent!==false, ddns_address||"", parseInt(monitor_port)||0,
         notes||"", req.params.id]);
 
+    if (r.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+
     // Executa o monitoramento cloud em background total
     if (ddns_address && monitor_port) {
       setImmediate(() => {
@@ -522,9 +528,10 @@ app.put("/devices/:id", auth, async (req, res) => {
       });
     }
 
+    logger("INFO", "Device updated successfully", { id: req.params.id });
     return res.json(r.rows[0]);
   } catch (e) { 
-    logger("ERROR", "Update Device Error", e);
+    logger("ERROR", "Update Device Error", { id: req.params.id, error: e.message });
     return res.status(500).json({ error: e.message }); 
   }
 });
