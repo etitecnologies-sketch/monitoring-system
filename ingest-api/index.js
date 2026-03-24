@@ -237,8 +237,23 @@ function clientFilter(req) {
   return req.user.client_id;
 }
 
-// ── Health Checks ────────────────────────────────────────────
-app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
+// Health check
+app.get("/health", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    await client.query("SELECT 1");
+    client.release();
+    res.json({ status: "ok", database: "connected" });
+  } catch (err) {
+    logger("ERROR", "Health check failed", { error: err.message });
+    res.status(500).json({ 
+      status: "error", 
+      database: "disconnected", 
+      message: err.message,
+      tip: "Verifique se a DATABASE_URL no Railway está correta e aponta para o banco real."
+    });
+  }
+});
 
 app.get("/ready", async (req, res) => {
   try { 
