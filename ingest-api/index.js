@@ -923,35 +923,86 @@ app.get("/solar/summary", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Rota de teste manual para o botão no frontend
+const dns = require("dns").promises;
+
+// Rota de teste manual para o botão no frontend com diagnóstico aprimorado
 app.post("/devices/:id/test", auth, async (req, res) => {
   try {
-    const dr = await pool.query("SELECT ddns_address, monitor_port FROM devices WHERE id=$1", [req.params.id]);
-    if (dr.rows.length === 0) return res.status(404).json({ error: "Device not found" });
+    const dr = await pool.query("SELECT name, ddns_address, monitor_port FROM devices WHERE id=$1", [req.params.id]);
+    if (dr.rows.length === 0) return res.status(404).json({ error: "Dispositivo não encontrado" });
     
-    const { ddns_address, monitor_port } = dr.rows[0];
+    const { name, ddns_address, monitor_port } = dr.rows[0];
     if (!ddns_address || !monitor_port) return res.status(400).json({ error: "DDNS e Porta não configurados" });
 
-    const socket = new net.Socket();
-    socket.setTimeout(5000);
-    
-    socket.on("connect", () => {
-      socket.destroy();
-      res.json({ alive: true, message: "Conexão estabelecida com sucesso!" });
+    const diag = { 
+      dns: { resolved: false, ip: null, error: null },
+      tcp: { alive: false, latency: 0, error: null }
+    };
+
+    // 1. Diagnóstico de DNS
+    try {
+      const addresses = await dns.resolve4(ddns_address);
+      diag.dns.resolved = true;
+      diag.dns.ip = addresses[0];
+    } catch (e) {
+      diag.dns.error = e.code || e.message;
+      return res.json({ 
+        alive: false, 
+        message: `❌ Erro de DNS: Não foi possível encontrar o endereço "${ddns_address}". Verifique se o seu DDNS Intelbras está ativo.`,
+        details: diag
+      });
+    }
+
+    // 2. Diagnóstico de Porta TCP
+    const checkTCP = () => new Promise((resolve) => {
+      const socket = new net.Socket();
+      const start = Date.now();
+      socket.setTimeout(8000); // 8 segundos para redes lentas
+      
+      socket.on("connect", () => {
+        const lat = Date.now() - start;
+        socket.destroy();
+        resolve({ alive: true, latency: lat, error: null });
+      });
+
+      socket.on("timeout", () => {
+        socket.destroy();
+        resolve({ alive: false, latency: 0, error: "TIMEOUT" });
+      });
+
+      socket.on("error", (err) => {
+        socket.destroy();
+        resolve({ alive: false, latency: 0, error: err.code });
+      });
+
+      socket.connect(monitor_port, ddns_address);
     });
 
-    socket.on("timeout", () => {
-      socket.destroy();
-      res.json({ alive: false, message: "Tempo esgotado. A porta parece estar fechada no seu roteador." });
-    });
+    const result = await checkTCP();
+    diag.tcp = result;
 
-    socket.on("error", (err) => {
-      socket.destroy();
-      res.json({ alive: false, message: `Erro de conexão: ${err.code}` });
-    });
+    if (result.alive) {
+      res.json({ 
+        alive: true, 
+        message: `✅ Sucesso! O sistema conseguiu conectar na câmera via ${ddns_address}:${monitor_port} (${result.latency}ms).`,
+        details: diag
+      });
+    } else {
+      let msg = `❌ Falha na conexão: A porta ${monitor_port} está fechada no seu roteador.`;
+      if (result.error === "ECONNREFUSED") msg = `❌ Conexão recusada: O roteador negou o acesso na porta ${monitor_port}. Verifique o "Virtual Server" no TP-Link.`;
+      if (result.error === "TIMEOUT") msg = `❌ Tempo esgotado: O roteador não respondeu na porta ${monitor_port}. Verifique se o redirecionamento de portas está correto.`;
+      
+      res.json({ 
+        alive: false, 
+        message: msg,
+        details: diag
+      });
+    }
 
-    socket.connect(monitor_port, ddns_address);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { 
+    logger("ERROR", "Manual Test Error", e);
+    res.status(500).json({ error: e.message }); 
+  }
 });
 
 // ── 404 Handler ──────────────────────────────────────────────
