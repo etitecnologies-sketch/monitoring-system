@@ -481,8 +481,19 @@ app.post("/devices", auth, async (req, res) => {
         tags||[], snmp_community||"public", snmp_version||"2c", ssh_user||null, ssh_port||22,
         monitor_ping!==false, monitor_snmp||false, monitor_agent!==false, ddns_address||"",
         parseInt(monitor_port)||0, notes||"", cid]);
-    res.status(201).json(r.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+
+    // Executa o monitoramento cloud em background total
+    if (ddns_address && monitor_port) {
+      setImmediate(() => {
+        cloudMonitor(r.rows[0].id).catch(err => logger("ERROR", "Background Monitor Error", err));
+      });
+    }
+
+    return res.status(201).json(r.rows[0]);
+  } catch (e) { 
+    logger("ERROR", "Create Device Error", e);
+    return res.status(500).json({ error: e.message }); 
+  }
 });
 
 app.put("/devices/:id", auth, async (req, res) => {
@@ -504,13 +515,18 @@ app.put("/devices/:id", auth, async (req, res) => {
         monitor_agent!==false, ddns_address||"", parseInt(monitor_port)||0,
         notes||"", req.params.id]);
 
-    // Executa o monitoramento cloud IMEDIATAMENTE após salvar
+    // Executa o monitoramento cloud em background total
     if (ddns_address && monitor_port) {
-      setTimeout(() => cloudMonitor(), 1000);
+      setImmediate(() => {
+        cloudMonitor(r.rows[0].id).catch(err => logger("ERROR", "Background Monitor Error", err));
+      });
     }
 
-    res.json(r.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    return res.json(r.rows[0]);
+  } catch (e) { 
+    logger("ERROR", "Update Device Error", e);
+    return res.status(500).json({ error: e.message }); 
+  }
 });
 
 app.delete("/devices/:id", auth, async (req, res) => {
@@ -939,17 +955,21 @@ app.listen(PORT, "0.0.0.0", () => {
 
 // ── Graceful Shutdown ──────────────────────────────────────────
 // --- MONITORAMENTO CLOUD (SEM AGENTE) ---
-async function cloudMonitor() {
+async function cloudMonitor(deviceId = null) {
   try {
-    const r = await pool.query(
-      "SELECT id, name, client_id, ddns_address, monitor_port FROM devices WHERE ddns_address <> '' AND monitor_port > 0"
-    );
+    const queryStr = deviceId 
+      ? "SELECT id, name, client_id, ddns_address, monitor_port FROM devices WHERE id=$1"
+      : "SELECT id, name, client_id, ddns_address, monitor_port FROM devices WHERE ddns_address <> '' AND monitor_port > 0";
+    const queryParams = deviceId ? [deviceId] : [];
     
+    const r = await pool.query(queryStr, queryParams);
     if (r.rows.length === 0) return;
 
-    for (const dev of r.rows) {
+    // Função interna para checar um único dispositivo
+    const checkOne = async (dev) => {
       const { id, name, client_id, ddns_address, monitor_port } = dev;
-      
+      if (!ddns_address || !monitor_port) return;
+
       const check = () => new Promise((resolve) => {
         const socket = new net.Socket();
         const start = Date.now();
@@ -963,14 +983,14 @@ async function cloudMonitor() {
 
         socket.on("timeout", () => {
           socket.destroy();
-          resolve({ alive: false, lat: 0, error: "TIMEOUT (Porta fechada ou sem resposta)" });
+          resolve({ alive: false, lat: 0, error: "TIMEOUT" });
         });
 
         socket.on("error", (err) => {
           socket.destroy();
           let msg = err.code;
-          if (err.code === "ECONNREFUSED") msg = "REFUSED (Câmera recusou a conexão)";
-          if (err.code === "ENOTFOUND") msg = "NOTFOUND (No-IP incorreto)";
+          if (err.code === "ECONNREFUSED") msg = "REFUSED";
+          if (err.code === "ENOTFOUND") msg = "NOTFOUND";
           resolve({ alive: false, lat: 0, error: msg });
         });
 
@@ -981,7 +1001,7 @@ async function cloudMonitor() {
       const status = result.alive ? 'online' : 'offline';
       const errorMsg = result.error || "";
       
-      // 1. Atualiza o status e a nota de erro no banco
+      // 1. Atualiza status no banco
       await pool.query(
         "UPDATE devices SET last_seen=NOW(), status=$1, notes=LEFT($2, 200) WHERE id=$3",
         [status, errorMsg ? `Cloud Error: ${errorMsg}` : "", id]
@@ -999,20 +1019,15 @@ async function cloudMonitor() {
         VALUES (NOW(), $1, $2, $3, 0, 0, $4, $5)
       `, [hr.rows[0].id, name, id, result.lat, status]);
 
-      // 4. Envia atualização via WebSocket
+      // 4. Envia atualização via WebSocket (em segundo plano)
       fetch(`${WEBSOCKET_URL}/publish`, {
         method: "POST", 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          host: name, 
-          cpu: 0, 
-          memory: 0, 
-          latency_ms: result.lat, 
-          device_id: id, 
-          client_id: client_id,
-          status: status,
-          error: errorMsg,
-          time: new Date().toISOString() 
+          host: name, cpu: 0, memory: 0, 
+          latency_ms: result.lat, device_id: id, 
+          client_id: client_id, status: status,
+          error: errorMsg, time: new Date().toISOString() 
         }),
       }).catch(() => {});
 
@@ -1021,6 +1036,14 @@ async function cloudMonitor() {
       } else {
         logger("WARN", `[CloudMonitor] ❌ ${name} (${ddns_address}:${monitor_port}) OFFLINE: ${errorMsg}`);
       }
+    };
+
+    // Se for um dispositivo específico, faz na hora. Senão, faz em paralelo com limite? 
+    // Por enquanto, paralelo total (são poucos devices).
+    if (deviceId) {
+      await checkOne(r.rows[0]);
+    } else {
+      await Promise.all(r.rows.map(dev => checkOne(dev)));
     }
   } catch (e) {
     logger("ERROR", `[CloudMonitor] Erro: ${e.message}`);

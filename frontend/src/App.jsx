@@ -719,15 +719,20 @@ function DevicesPage({ userRole, userClientId }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const [testing, setTesting] = useState(null);
+
   const del = async (id) => { if (!confirm("Remover?")) return; await api(`/devices/${id}`, { method: "DELETE" }); load(); };
   const regenToken = async (id) => { const d = await api(`/devices/${id}/regenerate-token`, { method: "POST" }); setTokenModal(d.token); load(); };
   const testConn = async (id) => {
+    setTesting(id);
     try {
       const res = await api(`/devices/${id}/test`, { method: "POST" });
       alert(res.message);
       load();
     } catch (e) {
       alert("Erro ao testar: " + (e.error || e.message));
+    } finally {
+      setTesting(null);
     }
   };
 
@@ -803,7 +808,9 @@ function DevicesPage({ userRole, userClientId }) {
                 <td style={S.td}>
                   <div style={{ display: "flex", gap: 4 }}>
                     <button style={S.btnSm()} onClick={() => setModal(d)} title="Editar">✏️</button>
-                    <button style={S.btnSm()} onClick={() => testConn(d.id)} title="Testar Conexão">📡</button>
+                    <button style={S.btnSm()} onClick={() => testConn(d.id)} title="Testar Conexão" disabled={testing===d.id}>
+                      {testing===d.id ? "..." : "📡"}
+                    </button>
                     <button style={S.btnSm()} onClick={() => regenToken(d.id)} title="Gerar Token">🔑</button>
                     <button style={S.btnSm("danger")} onClick={() => del(d.id)} title="Excluir">🗑️</button>
                   </div>
