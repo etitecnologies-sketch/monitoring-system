@@ -114,16 +114,20 @@ function DeviceModal({ device, onClose, onSave }) {
     
     try {
       if (device) {
-        await api.updateDevice(device.id, data);
+        const res = await api.updateDevice(device.id, data);
+        console.log("[Save] Update result:", res);
       } else {
         const res = await api.createDevice(data);
+        console.log("[Save] Create result:", res);
         setNewToken(res.token);
         onSave(res);
         setLoading(false);
         return;
       }
       onSave();
+      onClose(); // Fecha o modal explicitamente após salvar com sucesso
     } catch (err) {
+      console.error("[Save] Error:", err);
       alert("Erro ao salvar: " + err.message);
     } finally {
       setLoading(false);
