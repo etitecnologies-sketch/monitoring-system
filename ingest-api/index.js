@@ -782,8 +782,7 @@ const TCP_PORT = 3001; // Porta para o Registro Automático da Intelbras
 
 // ── Servidor TCP para Registro Automático (Protocolo Binário Intelbras) ──
 const tcpServer = net.createServer((socket) => {
-  const remoteAddr = socket.remoteAddress;
-  console.log(`[TCP] Nova conexão de: ${remoteAddr}`);
+  console.log(`[TCP] Nova conexão recebida`);
 
   socket.on("data", async (data) => {
     try {
@@ -791,7 +790,7 @@ const tcpServer = net.createServer((socket) => {
       const rawData = data.toString("utf8");
       const hexData = data.toString("hex").toUpperCase();
       
-      console.log(`[TCP] Dados recebidos de ${remoteAddr}: ${rawData.substring(0, 50)}...`);
+      console.log(`[TCP] Dados recebidos: ${rawData.substring(0, 50)}...`);
 
       // Busca no banco por qualquer dispositivo que tenha o SN ou MAC presente nos dados binários
       // O protocolo da Intelbras envia o SN em texto plano em algum momento
