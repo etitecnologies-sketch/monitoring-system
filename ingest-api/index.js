@@ -367,9 +367,33 @@ app.post("/push", metricsLimiter, async (req, res) => {
   } = body;
 
   // Extração de eventos do XML (Intelbras/Hikvision)
-  const finalEventType = event_type || type || xmlData.eventtype || xmlData.event;
+  let finalEventType = event_type || type || xmlData.eventtype || xmlData.event;
   const finalChannel = channel || xmlData.channelid || xmlData.channel || 0;
-  const finalDescription = description || xmlData.eventdescription || xmlData.description || "";
+  let finalDescription = description || xmlData.eventdescription || xmlData.description || "";
+
+  // Mapeamento de Analíticos de Vídeo (Intelbras/Hikvision)
+  const eventMap = {
+    'videoloss': 'Perda de Vídeo',
+    'videoloss_alarm': 'Perda de Vídeo',
+    'videoloss_started': 'Perda de Vídeo',
+    'videoloss_stopped': 'Vídeo Recuperado',
+    'motion': 'Movimento Detectado',
+    'motion_detection': 'Movimento Detectado',
+    'vca': 'Analítico de Vídeo',
+    'linedetection': 'Linha Virtual Atravessada',
+    'fielddetection': 'Intrusão em Área',
+    'tamperdetection': 'Câmera Obstruída (Tamper)',
+    'shelteralarm': 'Câmera Obstruída (Tamper)',
+    'diskfull': 'HD Cheio',
+    'diskerror': 'Erro no HD'
+  };
+
+  if (finalEventType && eventMap[finalEventType.toLowerCase()]) {
+    finalDescription = `${eventMap[finalEventType.toLowerCase()]} - Canal: ${finalChannel}`;
+    finalEventType = eventMap[finalEventType.toLowerCase()];
+  } else if (finalEventType) {
+    finalDescription = `${finalEventType} - Canal: ${finalChannel} ${finalDescription}`;
+  }
 
   if (!token) {
     console.log("[Push] Requisição sem identificador recebida:", JSON.stringify(body));
@@ -415,7 +439,7 @@ app.post("/push", metricsLimiter, async (req, res) => {
 
       let msg = `🎬 *Alerta NexusWatch*\n\n`;
       msg += `❌ ${dev.name}\n`;
-      msg += `Problema: Evento detectado: ${String(finalEventType).replace(/_/g, " ")}\n\n`;
+      msg += `Problema: ${finalEventType}\n\n`;
       msg += `Host: ${dev.name}\n`;
       msg += `Data: ${new Date().toLocaleString("pt-BR")}\n`;
       msg += `Equipamento: ${device_type || 'other'} - ${mac_address || 'N/A'} - ${serial_number || 'N/A'}\n`;
@@ -424,7 +448,7 @@ app.post("/push", metricsLimiter, async (req, res) => {
       const cData = clientRes.rows[0];
 
       if (cData?.name) msg += `Descrição: ${cData.name}\n`;
-      msg += `Indicação: Verifique as imagens do canal ${finalChannel}. ${finalDescription}`;
+      msg += `Indicação: Verifique as imagens do Canal ${finalChannel}. ${finalDescription}`;
 
       if (cData?.telegram_token && cData?.telegram_chat_id) {
         fetch(`https://api.telegram.org/bot${cData.telegram_token}/sendMessage`, {
