@@ -25,9 +25,11 @@ const getInitialAPI = () => {
   const h = window.location.hostname;
   if (h === "localhost" || h === "127.0.0.1") return "http://localhost:3000";
   
-  // Se estiver no Railway e não tiver variável, tenta trocar 'frontend' por 'ingest-api' e força https
-  if (h.includes("railway.app") && h.includes("frontend")) {
-    return "https://" + h.replace("frontend", "ingest-api");
+  // Se estiver no Railway e não tiver variável, tenta trocar o prefixo por 'ingest-api'
+  if (h.includes("railway.app") && !cleanApi) {
+    // Tenta detectar se o serviço atual tem um nome comum e troca pelo da API
+    if (h.includes("frontend")) return "https://" + h.replace("frontend", "ingest-api");
+    if (h.includes("powerful-unity")) return "https://" + h.replace("powerful-unity", "ingest-api");
   }
   
   return window.location.origin.replace("http://", "https://");
@@ -1068,9 +1070,9 @@ function Dashboard({ userRole }) {
 
   const load = useCallback(() => {
     api("/stats").then(setStats).catch(() => {});
-    api("/devices").then(setDevices).catch(() => {});
-    api("/alerts").then(setAlerts).catch(() => {});
-    if (userRole === "superadmin") api("/clients").then(setClients).catch(() => {});
+    api("/devices").then((data) => setDevices(Array.isArray(data) ? data : [])).catch(() => {});
+    api("/alerts").then((data) => setAlerts(Array.isArray(data) ? data : [])).catch(() => {});
+    if (userRole === "superadmin") api("/clients").then((data) => setClients(Array.isArray(data) ? data : [])).catch(() => {});
   }, [userRole]);
 
   useEffect(() => {

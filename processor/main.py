@@ -281,7 +281,7 @@ def check_ping_devices(cur, conn):
             alive, latency = ping(ip, PING_TIMEOUT)
             method = "PING"
 
-        return dev_id,dev_name,ip or ddns,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method,mac,sn
+        return dev_id,dev_name,ip or ddns,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method,mac,sn,last_latency
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
         results=list(ex.map(check_one,devices))
