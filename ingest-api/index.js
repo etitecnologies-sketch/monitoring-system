@@ -362,17 +362,17 @@ app.post("/push", metricsLimiter, async (req, res) => {
       console.log(`[Push] Evento recebido: ${event_type} no canal ${channel} do dispositivo ${dev.name}`);
 
       // ── Disparar Alertas (Telegram / WhatsApp) ──
-      const devDetails = await pool.query("SELECT mac_address, serial_number FROM devices WHERE id=$1", [dev.id]);
-      const { mac_address, serial_number } = devDetails.rows[0];
+      const devDetails = await pool.query("SELECT mac_address, serial_number, device_type FROM devices WHERE id=$1", [dev.id]);
+      const { mac_address, serial_number, device_type } = devDetails.rows[0];
 
       let msg = `🎬 *Alerta NexusWatch*\n\n`;
-      msg += `🔹 *Evento:* ${event_type.replace(/_/g, " ")}\n`;
-      msg += `🔹 *Device:* ${dev.name}\n`;
-      if (serial_number) msg += `🔹 *S/N:* \`${serial_number}\`\n`;
-      if (mac_address) msg += `🔹 *MAC:* \`${mac_address}\`\n`;
-      msg += `🔹 *Canal:* ${channel || "N/A"}\n`;
-      msg += `🔹 *Data:* ${new Date().toLocaleString("pt-BR")}\n\n`;
-      msg += `⚠️ ${description || "Nenhuma descrição disponível."}`;
+      msg += `❌ ${dev.name}\n`;
+      msg += `Problema: Evento detectado: ${event_type.replace(/_/g, " ")}\n\n`;
+      msg += `Host: ${dev.name}\n`;
+      msg += `Data do Evento: ${new Date().toLocaleString("pt-BR")}\n`;
+      msg += `Detalhes do Equipamento: ${device_type || 'other'} - ${mac_address || 'N/A'} - ${serial_number || 'N/A'}\n`;
+      if (client.rows[0]?.name) msg += `Descrição: ${client.rows[0].name}\n`;
+      msg += `Indicação: Verifique as imagens do canal ${channel || "N/A"}. ${description || ""}`;
 
       // Telegram (Se configurado no cliente)
       const client = await pool.query("SELECT telegram_token, telegram_chat_id, phone FROM clients WHERE id=$1", [dev.client_id]);

@@ -224,11 +224,10 @@ def check_ping_devices(cur, conn):
             ping_state[dev_id]=False
             logger.info(f"DEVICE ONLINE: {dev_name} ({target}) via {method}")
             msg=(f"✅ {dev_name}\n"
-                 f"Normalizado: {target} está respondendo via {method}\n"
+                 f"Normalizado: IP: {target} - {dev_name} está respondendo via {method}\n\n"
                  f"Host: {dev_name}\n"
-                 f"{mac_sn_str}"
                  f"Data da Normalização: {now_str()}\n"
-                 f"Detalhes do Equipamento: {d_icon} {dtype or 'other'} — Latência: {latency:.0f}ms\n"
+                 f"Detalhes do Equipamento: {d_icon} {dtype or 'other'} - {mac or 'N/A'} - {sn or 'N/A'}\n"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
                  +(f"Tags: {tags_str}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
@@ -244,14 +243,13 @@ def check_ping_devices(cur, conn):
                 conn.commit()
             except Exception as e: logger.error(f"Alert: {e}"); conn.rollback()
             msg=(f"❌ {dev_name}\n"
-                 f"Problema: {target} está indisponível\n"
+                 f"Problema: IP: {target} está indisponível via {method}\n\n"
                  f"Host: {dev_name}\n"
-                 f"{mac_sn_str}"
                  f"Data do Evento: {now_str()}\n"
-                 f"Detalhes do Equipamento: {d_icon} {dtype or 'other'}\n"
+                 f"Detalhes do Equipamento: {d_icon} {dtype or 'other'} - {mac or 'N/A'} - {sn or 'N/A'}\n"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
                  +(f"Tags: {tags_str}\n" if tags_str else "")
-                 +"Indicação: Verifique a conectividade e o redirecionamento de portas.")
+                 +f"Indicação: Last three attempts returned timeout. Please check device connectivity.")
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
                 f"Device '{dev_name}' ficou OFFLINE.\nAlvo: {target}\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
