@@ -12,6 +12,16 @@ const xmlparser = require("express-xml-bodyparser");
 
 const app = express();
 
+const escapeHtml = (text) => {
+  if (!text) return "";
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
 // Middleware de diagnóstico para logar todas as requisições no console do Railway
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
@@ -607,26 +617,29 @@ app.post("/push", metricsLimiter, async (req, res) => {
       const devDetails = await pool.query("SELECT mac_address, serial_number, device_type FROM devices WHERE id=$1", [dev.id]);
       const { mac_address, serial_number, device_type } = devDetails.rows[0];
 
-      let msg = `🎬 *Alerta NexusWatch*\n\n`;
-      msg += `❌ ${dev.name}\n`;
-      msg += `Problema: ${finalEventType}\n\n`;
-      msg += `Host: ${dev.name}\n`;
+      let msg = `🎬 <b>Alerta NexusWatch</b>\n\n`;
+      msg += `❌ <b>${escapeHtml(dev.name)}</b>\n`;
+      msg += `Problema: ${escapeHtml(finalEventType)}\n\n`;
+      msg += `Host: ${escapeHtml(dev.name)}\n`;
       msg += `Data: ${new Date().toLocaleString("pt-BR")}\n`;
-      msg += `Equipamento: ${device_type || 'other'} - ${mac_address || 'N/A'} - ${serial_number || 'N/A'}\n`;
+      msg += `Equipamento: ${escapeHtml(device_type || 'other')} - ${escapeHtml(mac_address || 'N/A')} - ${escapeHtml(serial_number || 'N/A')}\n`;
 
       const clientRes = await pool.query("SELECT name, telegram_token, telegram_chat_id, wa_instance, wa_token, wa_number FROM clients WHERE id=$1", [dev.client_id]);
       const cData = clientRes.rows[0];
 
-      if (cData?.name) msg += `Descrição: ${cData.name}\n`;
-      msg += `Indicação: Verifique as imagens do Canal ${finalChannel}. ${finalDescription}`;
+      if (cData?.name) msg += `Descrição: ${escapeHtml(cData.name)}\n`;
+      msg += `Indicação: Verifique as imagens do Canal ${finalChannel}. ${escapeHtml(finalDescription)}`;
 
       // Telegram
       if (cData?.telegram_token && cData?.telegram_chat_id) {
         fetch(`https://api.telegram.org/bot${cData.telegram_token}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: cData.telegram_chat_id, text: msg, parse_mode: "Markdown" })
-        }).catch(() => {});
+          body: JSON.stringify({ chat_id: cData.telegram_chat_id, text: msg, parse_mode: "HTML" })
+        }).then(r => {
+          if (!r.ok) r.text().then(t => console.error(`[Telegram Error] Status: ${r.status}, Body: ${t}`));
+          else console.log(`[Telegram] Alerta de evento enviado para ${cData.telegram_chat_id}`);
+        }).catch((err) => console.error("[Telegram Error] Fetch exception:", err.message));
       }
 
       // WhatsApp (Evolution API)
@@ -636,13 +649,15 @@ app.post("/push", metricsLimiter, async (req, res) => {
       const waNumber = cData?.wa_number || process.env.WA_NUMBER;
 
       if (waApiUrl && waInstance && waToken && waNumber) {
+        // Para WhatsApp removemos as tags <b> pois ele usa * para negrito
+        const waMsg = msg.replace(/<b>/g, "*").replace(/<\/b>/g, "*");
         fetch(`${waApiUrl.replace(/\/$/, "")}/message/sendText/${waInstance}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "apikey": waToken },
           body: JSON.stringify({
             number: waNumber,
             options: { delay: 1200, presence: "composing", linkPreview: false },
-            textMessage: { text: msg }
+            textMessage: { text: waMsg }
           })
         }).catch((err) => console.error("Erro WhatsApp Ingest:", err.message));
       }

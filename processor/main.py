@@ -1,4 +1,4 @@
-import os, time, logging, smtplib, requests, datetime, subprocess
+import os, time, logging, smtplib, requests, datetime, subprocess, html
 from email.mime.text import MIMEText
 from contextlib import contextmanager
 import psycopg2
@@ -115,7 +115,7 @@ def send_whatsapp(message, instance=None, token=None, number=None):
             logger.error(f"WhatsApp exception: {e}")
 
 def send_telegram(message, token=None, chat_id=None):
-    """Envia para o telegram do cliente ou do superadmin"""
+    """Envia para o telegram do cliente ou do superadmin com tratamento de erro e escape HTML"""
     targets = []
     if token and chat_id: targets.append((token, chat_id))
     if TG_TOKEN and TG_CHAT_ID: targets.append((TG_TOKEN, TG_CHAT_ID))
@@ -124,8 +124,12 @@ def send_telegram(message, token=None, chat_id=None):
         try:
             r = requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
                 json={"chat_id":cid,"text":message,"parse_mode":"HTML"},timeout=10)
-            if r.status_code==200: logger.info(f"Telegram ✓ sent to {cid}")
-        except Exception as e: logger.error(f"Telegram error: {e}")
+            if r.status_code == 200:
+                logger.info(f"Telegram ✓ sent to {cid}")
+            else:
+                logger.error(f"Telegram error {r.status_code} for {cid}: {r.text}")
+        except Exception as e:
+            logger.error(f"Telegram exception: {e}")
 
 def send_email(subject, body, to_email=None):
     emails = list(set(filter(None, [to_email, ALERT_EMAIL])))
@@ -247,7 +251,7 @@ def check_ping_devices(cur, conn):
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
         mac_sn_str = f"MAC: {mac} | SN: {sn}\n" if mac or sn else ""
-        was_down=ping_state.get(dev_id,False)
+        was_down = ping_state.get(dev_id, False) or (db_status == 'offline')
 
         # Buscar config do cliente
         tg_tok, tg_cid, cl_email, cl_name = get_client_config(cur, client_id)
@@ -270,89 +274,118 @@ def check_ping_devices(cur, conn):
 
         if alive and was_down:
             ping_state[dev_id]=False
-            logger.info(f"DEVICE ONLINE: {dev_name} ({target}) via {method}")
-            msg=(f"✅ {dev_name}\n"
-                 f"Normalizado: IP: {target} - {dev_name} está respondendo via {method}\n\n"
-                 f"Host: {dev_name}\n"
+            logger.info(f"✅ DEVICE ONLINE: {dev_name} ({target}) via {method}")
+            edev_name = html.escape(dev_name)
+            etarget = html.escape(target)
+            ecl_name = html.escape(cl_name) if cl_name else ""
+            msg=(f"✅ <b>{edev_name}</b>\n"
+                 f"Normalizado: Host <b>{etarget}</b> está respondendo via {method}\n\n"
+                 f"Host: {edev_name}\n"
                  f"Data da Normalização: {now_str()}\n"
-                 f"Detalhes do Equipamento: {d_icon} {dtype or 'other'} - {mac or 'N/A'} - {sn or 'N/A'}\n"
-                 +(f"Descrição: {cl_name}\n" if cl_name else "")
-                 +(f"Tags: {tags_str}\n" if tags_str else ""))
+                 f"Detalhes: {d_icon} {html.escape(dtype or 'other')} - {html.escape(mac or 'N/A')} - {html.escape(sn or 'N/A')}\n"
+                 +(f"Descrição: {ecl_name}\n" if cl_name else "")
+                 +(f"Tags: {html.escape(tags_str)}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
                 f"Device '{dev_name}' voltou ONLINE.\nAlvo: {target}\nMétodo: {method}\nLatência: {latency:.0f}ms\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
 
         elif not alive and not was_down:
             ping_state[dev_id]=True
-            logger.warning(f"DEVICE OFFLINE: {dev_name} ({target})")
+            logger.warning(f"🚨 DEVICE OFFLINE: {dev_name} ({target})")
             try:
                 cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'offline',1,0,'offline',%s)",(dev_id,target or dev_name,client_id))
                 cur.execute("UPDATE devices SET status='offline' WHERE id=%s",(dev_id,))
                 conn.commit()
-            except Exception as e: logger.error(f"Alert: {e}"); conn.rollback()
-            msg=(f"❌ {dev_name}\n"
-                 f"Problema: IP: {target} está indisponível via {method}\n\n"
-                 f"Host: {dev_name}\n"
+            except Exception as e: logger.error(f"Alert DB save error: {e}"); conn.rollback()
+            edev_name = html.escape(dev_name)
+            etarget = html.escape(target)
+            ecl_name = html.escape(cl_name) if cl_name else ""
+            msg=(f"❌ <b>{edev_name}</b>\n"
+                 f"Problema: Host <b>{etarget}</b> está indisponível via {method}\n\n"
+                 f"Host: {edev_name}\n"
                  f"Data do Evento: {now_str()}\n"
-                 f"Detalhes do Equipamento: {d_icon} {dtype or 'other'} - {mac or 'N/A'} - {sn or 'N/A'}\n"
-                 +(f"Descrição: {cl_name}\n" if cl_name else "")
-                 +(f"Tags: {tags_str}\n" if tags_str else "")
-                 +f"Indicação: Last three attempts returned timeout. Please check device connectivity.")
+                 f"Detalhes: {d_icon} {html.escape(dtype or 'other')} - {html.escape(mac or 'N/A')} - {html.escape(sn or 'N/A')}\n"
+                 +(f"Descrição: {ecl_name}\n" if cl_name else "")
+                 +(f"Tags: {html.escape(tags_str)}\n" if tags_str else "")
+                 +f"Indicação: Falha na conexão via {method}. Verifique o equipamento.")
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
                 f"Device '{dev_name}' ficou OFFLINE.\nAlvo: {target}\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
 
 def check_offline_devices(cur, conn):
-    cur.execute("SELECT id,name,hostname,last_seen,status,device_type,tags,client_id,mac_address,serial_number FROM devices WHERE monitor_agent=TRUE")
-    for row in cur.fetchall():
-        dev_id,dev_name,hostname,last_seen,status,dtype,tags,client_id,mac,sn=row
-        if last_seen is None: continue
-        now=datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-        is_offline=(now-last_seen).total_seconds()>OFFLINE_TIMEOUT
-        was_offline=device_online_state.get(dev_id,False)
+    # Monitora todos os dispositivos que têm sinal de vida (last_seen), independente do flag monitor_agent
+    # Isso garante que câmeras Push/TCP sejam alertadas mesmo que o usuário esqueça o flag de agente
+    cur.execute("SELECT id,name,hostname,last_seen,status,device_type,tags,client_id,mac_address,serial_number,monitor_agent FROM devices")
+    rows = cur.fetchall()
+    # logger.info(f"Checking offline status for {len(rows)} devices...") # Log excessivo, mas útil se nada estiver acontecendo
+    
+    for row in rows:
+        dev_id,dev_name,hostname,last_seen,status,dtype,tags,client_id,mac,sn,agent_enabled=row
+        if last_seen is None:
+            # logger.info(f"Skip {dev_name}: no last_seen")
+            continue
+        
+        now=datetime.datetime.now(datetime.timezone.utc)
+        if last_seen and last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=datetime.timezone.utc)
+        
+        diff = (now-last_seen).total_seconds()
+        is_offline = diff > OFFLINE_TIMEOUT
+        was_offline = device_online_state.get(dev_id, False) or (status == 'offline')
 
-        # DEBUG: Log para acompanhar o tempo de queda no console do Railway
-        if (now-last_seen).total_seconds() > 20:
-            logger.info(f"Monitorando queda: {dev_name} sem sinal há {(now-last_seen).total_seconds():.0f}s")
+        # Se o monitoramento de agente/push estiver desativado e o dispositivo estiver online, pulamos
+        if not agent_enabled and not is_offline:
+            continue
+
+        # Log de diagnóstico no Railway console
+        if diff > 15: # Reduzido log para 15s para depurar melhor
+            logger.info(f"Monitorando queda: {dev_name} ({dev_id}) sem sinal há {diff:.0f}s (Threshold: {OFFLINE_TIMEOUT}s)")
+        
         d_icon=device_icon(dtype)
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
-        mac_sn_str = f"Detalhes do Equipamento: {dtype or 'other'} - {mac or 'N/A'} - {sn or 'N/A'}\n" if mac or sn else ""
+        
+        # Escapando HTML para evitar erros no Telegram
+        edev_name = html.escape(dev_name)
+        ehostname = html.escape(hostname or dev_name)
+        
+        mac_sn_str = f"Detalhes do Equipamento: {html.escape(dtype or 'other')} - {html.escape(mac or 'N/A')} - {html.escape(sn or 'N/A')}\n" if mac or sn else ""
         tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
+        ecl_name = html.escape(cl_name) if cl_name else ""
 
         if is_offline and not was_offline:
             device_online_state[dev_id]=True
             try:
                 cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'offline',1,0,'offline',%s)",(dev_id,hostname or dev_name,client_id))
                 conn.commit()
-            except Exception as e: logger.error(f"Offline: {e}"); conn.rollback()
-            downtime=int((now-last_seen).total_seconds())
-            logger.warning(f"OFFLINE: {dev_name}")
-            msg=(f"❌ {dev_name}\n"
-                 f"Problema: IP: {hostname or dev_name} está indisponível\n\n"
-                 f"Host: {dev_name}\n"
+            except Exception as e: logger.error(f"Offline alert DB save error: {e}"); conn.rollback()
+            
+            logger.warning(f"🚨 OFFLINE DETECTADO: {dev_name} ({diff:.0f}s)")
+            msg=(f"❌ <b>{edev_name}</b>\n"
+                 f"Problema: Host <b>{ehostname}</b> está indisponível\n\n"
+                 f"Host: {edev_name}\n"
                  f"Data do Evento: {now_str()}\n"
                  f"{mac_sn_str}"
-                 +(f"Descrição: {cl_name}\n" if cl_name else "")
-                 +(f"Tags: {tags_str}\n" if tags_str else "")
+                 +(f"Descrição: {ecl_name}\n" if cl_name else "")
+                 +(f"Tags: {html.escape(tags_str)}\n" if tags_str else "")
                  +"Indicação: Verifique a conectividade do dispositivo.")
             send_telegram(msg, tg_tok, tg_cid)
-            send_whatsapp(msg, wa_inst, wa_tok, wa_num)
+            send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
             send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
                 f"Device '{dev_name}' parou de enviar dados.\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_str()}", cl_email)
 
         elif not is_offline and was_offline:
             device_online_state[dev_id]=False
-            logger.info(f"ONLINE: {dev_name}")
-            msg=(f"✅ {dev_name}\n"
+            logger.info(f"✅ ONLINE RECUPERADO: {dev_name}")
+            msg=(f"✅ <b>{edev_name}</b>\n"
                  f"Normalizado: Dispositivo voltou a se comunicar\n\n"
-                 f"Host: {dev_name}\n"
+                 f"Host: {edev_name}\n"
                  f"Data da Normalização: {now_str()}\n"
                  f"{mac_sn_str}"
-                 +(f"Descrição: {cl_name}\n" if cl_name else "")
-                 +(f"Tags: {tags_str}\n" if tags_str else ""))
+                 +(f"Descrição: {ecl_name}\n" if cl_name else "")
+                 +(f"Tags: {html.escape(tags_str)}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
-            send_whatsapp(msg, wa_inst, wa_tok, wa_num)
+            send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
             send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
                 f"Device '{dev_name}' voltou.\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_str()}", cl_email)
 
@@ -463,7 +496,8 @@ def main():
     logger.info(f"  {APP_NAME} — Multi-tenant Monitor")
     logger.info(f"  interval={EVAL_INTERVAL}s | ping_timeout={PING_TIMEOUT}s")
     logger.info(f"  offline_timeout={OFFLINE_TIMEOUT}s | cooldown={ALERT_COOLDOWN}s")
-    logger.info(f"  telegram={'ON' if TG_TOKEN else 'OFF'} | email={'ON' if SMTP_HOST else 'OFF'}")
+    logger.info(f"  telegram={'ON' if TG_TOKEN else 'OFF'} | chat_id={TG_CHAT_ID[:5]}***")
+    logger.info(f"  email={'ON' if SMTP_HOST else 'OFF'}")
     logger.info(f"{'='*52}")
     send_telegram(
         f"🚀 <b>{APP_NAME} iniciado!</b>\n━━━━━━━━━━━━━━━━━━━━\n"
