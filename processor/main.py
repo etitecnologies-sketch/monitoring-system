@@ -373,24 +373,41 @@ def check_ping_devices(cur, conn):
 
 def check_offline_devices(cur, conn):
     # 1. DETECÇÃO DE QUEDA POR TIMEOUT (Para Auto Registro / Push / Agent)
-    # Marcar como OFFLINE quem sumiu há mais de 10s.
+    # Selecionar dispositivos que deveriam estar offline mas ainda constam como online
     cur.execute(f"""
-        UPDATE devices 
-        SET status = 'offline'
+        SELECT id, name, client_id, device_type, mac_address, serial_number 
+        FROM devices 
         WHERE last_seen IS NOT NULL 
           AND status != 'offline'
           AND (NOW() AT TIME ZONE 'UTC' - last_seen AT TIME ZONE 'UTC') > INTERVAL '{OFFLINE_TIMEOUT} seconds'
-        RETURNING id, name, client_id, device_type, mac_address, serial_number;
     """)
     dropped = cur.fetchall()
     
     for dev_id, dev_name, client_id, dtype, mac, sn in dropped:
         logger.warning(f"🚨 QUEDA POR TIMEOUT: {dev_name}")
         try:
+            # Atualiza o status para offline no banco
+            cur.execute("UPDATE devices SET status='offline' WHERE id=%s", (dev_id,))
             cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id,fired_at) VALUES(%s,%s,'offline',1,0,'offline',%s,NOW())",(dev_id,dev_name,client_id))
             cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,0,'offline')", (dev_name, dev_id))
             conn.commit()
             
+            # Notificar WebSocket para atualizar o Dashboard em tempo real
+            if WA_API_URL: # Usamos WA_API_URL apenas como flag para saber se o servidor tem rede
+                try:
+                    # Tenta avisar o websocket via ingest-api (proxy) ou direto se estiver no mesmo docker
+                    ws_url = os.getenv("WEBSOCKET_URL", "http://websocket:3001").replace(/\/$/, "")
+                    requests.post(f"{ws_url}/publish", json={
+                        "type": "METRIC",
+                        "device_id": dev_id,
+                        "client_id": client_id,
+                        "name": dev_name,
+                        "status": "offline",
+                        "latency_ms": 0,
+                        "time": datetime.datetime.now().isoformat()
+                    }, timeout=2)
+                except: pass
+
             tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
             
             # Formato solicitado pelo usuário

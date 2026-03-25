@@ -813,11 +813,12 @@ const tcpServer = net.createServer((socket) => {
           
           console.log(`[TCP] SINAL DE VIDA: ${dev.name} (${dev.serial_number || dev.mac_address})`);
           
-          // Atualiza sinal de vida e status online
-          // O Processor Python cuidará do envio do alerta de online ao detectar a mudança de status no banco
-          await pool.query("UPDATE devices SET last_seen=NOW(), status='online' WHERE id=$1", [dev.id]);
+          // Atualiza sinal de vida (last_seen) - NÃO força status 'online'
+          // Deixa o Processor Python detectar que o sinal chegou e mudar para online
+          await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [dev.id]);
           
           // Grava métrica de sinal de vida (latência fictícia baixa para TCP direto)
+          // O Processor usa a tabela metrics e last_seen para decidir o status
           await pool.query(`
             INSERT INTO metrics (time, host, device_id, latency_ms, status)
             VALUES (NOW(), $1, $2, $3, 'online')
