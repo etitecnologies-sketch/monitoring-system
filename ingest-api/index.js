@@ -597,6 +597,10 @@ async function cloudMonitor(deviceId = null) {
 
       const isPrivate = targetHost.startsWith("192.168.") || targetHost.startsWith("10.") || targetHost.startsWith("172.");
       
+      // Se for IP privado e não tiver DDNS, o servidor cloud não consegue alcançar.
+      // Ignora para não gerar status 'offline' indevido.
+      if (isPrivate && !dev.ddns_address) continue;
+
       const updateStatus = async (status, latency = 0, error = null) => {
         const notePrefix = isPrivate ? "🛡️ VPN " : "☁️ Cloud ";
         await pool.query("UPDATE devices SET status=$1, last_seen=NOW(), notes=$2 WHERE id=$3", [status, error ? `${notePrefix}Error: ${error}` : `${notePrefix}OK`, dev.id]);

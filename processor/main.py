@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 APP_NAME        = "NexusWatch Pro"
 DATABASE_URL    = os.environ["DATABASE_URL"]
-EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "3"))
-OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "60"))
+EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "5"))
+OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "120"))
 ALERT_COOLDOWN  = int(os.getenv("ALERT_COOLDOWN", "120"))
 PING_TIMEOUT    = int(os.getenv("PING_TIMEOUT", "3"))
 PING_COUNT      = int(os.getenv("PING_COUNT", "1"))
@@ -191,6 +191,13 @@ def check_ping_devices(cur, conn):
         latency = 0
         method = "NONE"
         
+        # Ignora IPs privados (192.168.x, 10.x, 172.16-31.x) pois o servidor cloud não alcança
+        # Esses dispositivos serão monitorados apenas pelo 'last_seen' (Heartbeat/Push)
+        is_private = ip and (ip.startswith("192.168.") or ip.startswith("10.") or ip.startswith("172."))
+        
+        if is_private and not ddns:
+            return None # Ignora este dispositivo no monitoramento de Ping direto
+
         # 1. Tenta DDNS se disponível
         if ddns and port:
             import socket
@@ -234,6 +241,7 @@ def check_ping_devices(cur, conn):
         results=list(ex.map(check_one,devices))
 
     for r in results:
+        if r is None: continue
         dev_id,dev_name,target,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method,mac,sn=r
         d_icon=device_icon(dtype)
         tags_list=tags if tags else []
