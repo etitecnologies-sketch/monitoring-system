@@ -192,16 +192,24 @@ export default function Devices() {
               <StatusBadge status={dev.status} lastSeen={dev.last_seen} />
             </div>
             
-            <div style={{...S.deviceInfo, border: "1px solid rgba(99, 102, 241, 0.2)", background: "rgba(99, 102, 241, 0.05)"}}>
-              <div style={{ ...S.infoItem, gridColumn: "span 2", background: "rgba(16, 185, 129, 0.1)", padding: "10px", borderRadius: "10px", border: "1px dashed #10b981" }}>
-                <span style={{...S.infoLabel, color: "#34d399", fontWeight: "800"}}>🔑 TOKEN DO DISPOSITIVO (COPIAR)</span>
-                <span style={{ ...S.infoValue, color: "#fff", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", wordBreak: "break-all", marginTop: "4px" }}>{dev.token}</span>
+            <div style={{...S.deviceInfo, border: "1px solid rgba(99, 102, 241, 0.2)", background: "rgba(99, 102, 241, 0.05)", display: "block"}}>
+              <div style={{ background: "rgba(16, 185, 129, 0.1)", padding: "12px", borderRadius: "10px", border: "1px dashed #10b981", marginBottom: "15px" }}>
+                <span style={{fontSize: "10px", color: "#34d399", fontWeight: "800", display: "block", marginBottom: "4px"}}>🔑 TOKEN DO DISPOSITIVO</span>
+                <code style={{ color: "#fff", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", wordBreak: "break-all" }}>{dev.token}</code>
               </div>
-              <div style={S.infoItem}><span style={S.infoLabel}>Tipo</span><span style={S.infoValue}>{dev.device_type?.toUpperCase()}</span></div>
-              <div style={{...S.infoItem, background: "rgba(99, 102, 241, 0.1)", padding: "4px 8px", borderRadius: "6px"}}><span style={{...S.infoLabel, color: "#818cf8"}}>🆔 MAC</span><span style={S.infoValue}>{dev.mac_address || "---"}</span></div>
-              <div style={{...S.infoItem, background: "rgba(167, 139, 250, 0.1)", padding: "4px 8px", borderRadius: "6px"}}><span style={{...S.infoLabel, color: "#c084fc"}}>🏷️ SN</span><span style={S.infoValue}>{dev.serial_number || "---"}</span></div>
-              <div style={S.infoItem}><span style={S.infoLabel}>Latência</span><span style={{ ...S.infoValue, color: "#10b981" }}>{dev.last_latency ? `${dev.last_latency}ms` : "---"}</span></div>
-              <div style={S.infoItem}><span style={S.infoLabel}>Local</span><span style={S.infoValue}>{dev.location || "N/A"}</span></div>
+              
+              <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px"}}>
+                <div style={{background: "rgba(99, 102, 241, 0.1)", padding: "8px", borderRadius: "8px", border: "1px solid rgba(99, 102, 241, 0.2)"}}>
+                  <span style={{fontSize: "9px", color: "#818cf8", display: "block", textTransform: "uppercase"}}>🆔 MAC Address</span>
+                  <span style={{fontSize: "13px", color: "#fff", fontWeight: "600"}}>{dev.mac_address || "---"}</span>
+                </div>
+                <div style={{background: "rgba(167, 139, 250, 0.1)", padding: "8px", borderRadius: "8px", border: "1px solid rgba(167, 139, 250, 0.2)"}}>
+                  <span style={{fontSize: "9px", color: "#c084fc", display: "block", textTransform: "uppercase"}}>🏷️ Serial Number</span>
+                  <span style={{fontSize: "13px", color: "#fff", fontWeight: "600"}}>{dev.serial_number || "---"}</span>
+                </div>
+                <div style={S.infoItem}><span style={S.infoLabel}>Tipo</span><span style={S.infoValue}>{dev.device_type?.toUpperCase()}</span></div>
+                <div style={S.infoItem}><span style={S.infoLabel}>Latência</span><span style={{ ...S.infoValue, color: "#10b981" }}>{dev.last_latency ? `${dev.last_latency}ms` : "---"}</span></div>
+              </div>
             </div>
 
             <div style={S.actions}>
