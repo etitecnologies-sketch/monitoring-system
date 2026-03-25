@@ -86,7 +86,10 @@ async function initDB() {
           id BIGSERIAL PRIMARY KEY, time TIMESTAMPTZ NOT NULL, host_id INT REFERENCES hosts(id) ON DELETE CASCADE,
           host TEXT NOT NULL, device_id INT REFERENCES devices(id) ON DELETE SET NULL,
           cpu FLOAT DEFAULT 0, memory FLOAT DEFAULT 0, disk_percent FLOAT DEFAULT 0,
-          latency_ms FLOAT DEFAULT 0, status TEXT DEFAULT 'online'
+          latency_ms FLOAT DEFAULT 0, status TEXT DEFAULT 'online',
+          solar_voltage FLOAT DEFAULT 0, battery_voltage FLOAT DEFAULT 0,
+          battery_percent FLOAT DEFAULT 0, charge_current FLOAT DEFAULT 0,
+          load_current FLOAT DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS events (
           id BIGSERIAL PRIMARY KEY, time TIMESTAMPTZ DEFAULT NOW(),
@@ -364,11 +367,19 @@ app.post("/push", metricsLimiter, async (req, res) => {
   const { 
     status, cpu, memory, disk, 
     event_type, channel, description, severity,
-    type 
+    type,
+    solar_v, batt_v, batt_p, charge_a, load_a // Campos para telemetria solar
   } = body;
   
   // Usa a latência enviada pela câmera ou calcula a do processamento
   const finalLatency = body.latency || latency;
+
+  // Normalização de dados solares
+  const solar_voltage = solar_v || body.solar_voltage || 0;
+  const battery_voltage = batt_v || body.battery_voltage || 0;
+  const battery_percent = batt_p || body.battery_percent || 0;
+  const charge_current = charge_a || body.charge_current || 0;
+  const load_current = load_a || body.load_current || 0;
 
   // Extração de eventos do XML (Intelbras/Hikvision)
   let finalEventType = event_type || type || xmlData.eventtype || xmlData.event;
@@ -428,11 +439,11 @@ app.post("/push", metricsLimiter, async (req, res) => {
     // 1. Atualizar Status
     await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", ["online", dev.id]);
     
-    // Grava métrica de latência
+    // Grava métrica de latência e solar
     await pool.query(`
-      INSERT INTO metrics (time, host, device_id, latency_ms, status)
-      VALUES (NOW(), $1, $2, $3, $4)
-    `, [dev.name, dev.id, finalLatency, "online"]);
+      INSERT INTO metrics (time, host, device_id, latency_ms, status, solar_voltage, battery_voltage, battery_percent, charge_current, load_current)
+      VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [dev.name, dev.id, finalLatency, "online", solar_voltage, battery_voltage, battery_percent, charge_current, load_current]);
 
     // 2. Registrar Eventos
     if (finalEventType) {
@@ -500,6 +511,13 @@ app.post("/push", metricsLimiter, async (req, res) => {
           name: dev.name,
           status: "online",
           latency_ms: finalLatency,
+          solar: {
+            voltage: solar_voltage,
+            battery_voltage: battery_voltage,
+            battery_percent: battery_percent,
+            charge_current: charge_current,
+            load_current: load_current
+          },
           event: finalEventType ? { type: finalEventType, channel: finalChannel, description: finalDescription } : null,
           time: new Date().toISOString()
         }),

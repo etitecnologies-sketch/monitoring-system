@@ -100,6 +100,7 @@ const EXPRESSIONS = [
   { value: "latency_ms",   label: "Latência (ms)" },
   { value: "load_avg",     label: "Load Average" },
   { value: "temperature",  label: "Temperatura (°C)" },
+  { value: "solar",        label: "☀️ Energia Solar", icon: "🔋" },
 ];
 
 const PLANS = [
@@ -976,6 +977,29 @@ function DevicesPage({ userRole, userClientId }) {
                   <span style={{ fontSize: "11px", color: "#fff", fontWeight: "600", fontFamily: "monospace" }}>{d.serial_number || "---"}</span>
                 </div>
               </div>
+
+              {/* Status Solar (Se disponível) */}
+              {(d.solar_voltage > 0 || d.battery_percent > 0) && (
+                <div style={{ background: "rgba(234, 179, 8, 0.05)", padding: "10px", borderRadius: "8px", border: "1px solid rgba(234, 179, 8, 0.2)", marginTop: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 10, color: "#eab308", fontWeight: "bold" }}>☀️ STATUS SOLAR</span>
+                    <span style={{ fontSize: 12, color: "#fff", fontWeight: "bold" }}>{d.battery_percent}%</span>
+                  </div>
+                  <div style={{ height: 4, background: "rgba(255,255,255,0.1)", borderRadius: 2, overflow: "hidden", marginBottom: 8 }}>
+                    <div style={{ height: "100%", width: `${d.battery_percent}%`, background: d.battery_percent > 20 ? "#22c55e" : "#ef4444", transition: "width 0.5s ease" }} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <span style={{ fontSize: 8, color: "#a1a1aa", display: "block" }}>PAINEL</span>
+                      <span style={{ fontSize: 10, color: "#fff" }}>{d.solar_voltage}V</span>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: 8, color: "#a1a1aa", display: "block" }}>BATERIA</span>
+                      <span style={{ fontSize: 10, color: "#fff" }}>{d.battery_voltage}V</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {d.monitor_port > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
