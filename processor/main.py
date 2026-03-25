@@ -23,8 +23,8 @@ def escape_html(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 def now_display():
-    """Retorna o horário atual formatado para o Brasil"""
-    return datetime.datetime.now(TIMEZONE_DISPLAY).strftime("%d/%m/%Y %H:%M:%S")
+    """Retorna o horário atual formatado para o Brasil (YYYY.MM.DD-HH:MM:SS)"""
+    return datetime.datetime.now(TIMEZONE_DISPLAY).strftime("%Y.%m.%d-%H:%M:%S")
 
 DATABASE_URL    = sanitize(os.environ.get("DATABASE_URL", ""))
 EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "1")) # Ciclo ultra-rápido: 1s
@@ -392,23 +392,21 @@ def check_offline_devices(cur, conn):
             conn.commit()
             
             tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
-            d_icon = device_icon(dtype)
             
+            # Formato solicitado pelo usuário
             msg=(f"❌ <b>{escape_html(dev_name)}</b>\n"
-                 f"<b>DISPOSITIVO OFFLINE</b>\n"
-                 f"O sinal foi interrompido há mais de {OFFLINE_TIMEOUT} segundos.\n\n"
-                 f"Data/Hora: <b>{now_display()}</b>\n"
-                 f"Detalhes: {d_icon} {escape_html(dtype or 'other')}\n"
-                 +(f"MAC: {escape_html(mac)}\n" if mac else "")
-                 +(f"SN: {escape_html(sn)}\n" if sn else "")
-                 +(f"Cliente: {escape_html(cl_name)}\n" if cl_name else ""))
+                 f"Problema: O dispositivo está indisponível há mais de {OFFLINE_TIMEOUT}s\n\n"
+                 f"Host: <b>{escape_html(dev_name)}</b>\n"
+                 f"Data do Evento: <b>{now_display()}</b>\n"
+                 f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
+                 f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
+                 f"Indicação: Verifique a conectividade e energia do dispositivo.")
             
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
         except Exception as e: logger.error(f"Erro Queda Timeout: {e}"); conn.rollback()
 
-    # 2. DETECÇÃO DE RETORNO POR TIMEOUT (Para quem voltou a enviar last_seen mas estava offline)
-    # Dispositivos que estão com status 'offline' mas o last_seen é menor que 10s
+    # 2. DETECÇÃO DE RETORNO POR TIMEOUT
     cur.execute(f"""
         UPDATE devices 
         SET status = 'online'
@@ -423,16 +421,14 @@ def check_offline_devices(cur, conn):
         logger.info(f"✅ RETORNO POR SINAL: {dev_name}")
         try:
             tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
-            d_icon = device_icon(dtype)
             
+            # Formato solicitado
             msg=(f"✅ <b>{escape_html(dev_name)}</b>\n"
-                 f"<b>CONEXÃO RECUPERADA</b>\n"
-                 f"O sistema voltou a receber sinal do dispositivo.\n\n"
-                 f"Data/Hora: <b>{now_display()}</b>\n"
-                 f"Detalhes: {d_icon} {escape_html(dtype or 'other')}\n"
-                 +(f"MAC: {escape_html(mac)}\n" if mac else "")
-                 +(f"SN: {escape_html(sn)}\n" if sn else "")
-                 +(f"Cliente: {escape_html(cl_name)}\n" if cl_name else ""))
+                 f"Normalizado: O dispositivo voltou a responder ao sistema\n\n"
+                 f"Host: <b>{escape_html(dev_name)}</b>\n"
+                 f"Data da Normalização: <b>{now_display()}</b>\n"
+                 f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
+                 f"Descrição: {escape_html(cl_name or 'NexusWatch')}")
             
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
@@ -474,14 +470,12 @@ def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None
     etags_str = escape_html(tags_str)
 
     msg=(f"{sev_icon} <b>{edname}</b>\n"
-         f"Problema: {emeta_label} atingiu {value:.1f}{unit} (limite: {threshold}{unit})\n"
-         f"Host: {ehost}\n"
-         f"{mac_sn_str}"
-         f"Data do Evento: {now_str()}\n"
-         f"Trigger: {ename}\n"
-         +(f"Descrição: {ecl_name}\n" if cl_name else "")
-         +(f"Tags: {etags_str}\n" if tags_str else "")
-         +f"Indicação: {esev_label} — verifique o dispositivo.")
+         f"Problema: {emeta_label} atingiu {value:.1f}{unit} (limite: {threshold}{unit})\n\n"
+         f"Host: <b>{ehost}</b>\n"
+         f"Data do Evento: <b>{now_display()}</b>\n"
+         f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
+         f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
+         f"Indicação: {esev_label} — verifique o dispositivo.")
     send_telegram(msg, tg_tok, tg_cid)
     send_email(f"[{APP_NAME}] {sev_icon} {sev_label}: {name} em {host}",
         f"ALERTA {sev_label}\n\nTrigger: {name}\nHost: {host}\nDevice: {dname or 'N/A'}\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nMétrica: {meta['label']} = {value:.1f}{unit}\nLimite: {threshold}{unit}\nHorário: {now_str()}", cl_email)
