@@ -344,18 +344,37 @@ function AuthPage({ onLogin }) {
   useEffect(() => {
     const checkStatus = async () => {
       console.log(`[App] Verificando status da API em: ${API}/auth/status`);
+      
+      // Timer de diagnóstico: se demorar mais de 3s, mostra aviso visual
+      const diagTimer = setTimeout(() => {
+        if (step === null) {
+          setErr(
+            <span>
+              🕒 A API está demorando para responder... <br/>
+              Link atual: <strong style={{color:'#38bdf8'}}>{API}</strong> <br/>
+              <button onClick={() => window.location.reload()} style={{marginTop:10, padding:'5px 10px', borderRadius:5, border:'none', background:'#38bdf8', color:'#000', cursor:'pointer'}}>
+                Recarregar Página
+              </button>
+            </span>
+          );
+        }
+      }, 3000);
+
       try {
         const d = await api("/auth/status");
+        clearTimeout(diagTimer);
         console.log("[App] API Status: OK", d);
         setStep(d.setupDone ? "login" : "setup");
+        setErr(""); // Limpa erro se conectar
       } catch (e) {
+        clearTimeout(diagTimer);
         console.error("[App] API Connection Error:", e);
-        const errorMsg = e.message || (typeof e === 'string' ? e : JSON.stringify(e));
+        const errorMsg = e.message || (typeof e === 'string' ? e : "Erro de conexão");
         setErr(
           <span>
-            Não foi possível conectar à API. <br/>
+            ❌ Erro ao conectar na API <br/>
             <a href={`${API}/auth/status`} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
-              Clique aqui para testar o link da API
+              Testar link da API: {API}
             </a>
             <div style={{ fontSize: '10px', marginTop: '5px', opacity: 0.7 }}>{errorMsg}</div>
           </span>
