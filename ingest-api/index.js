@@ -603,8 +603,8 @@ app.post("/push", metricsLimiter, async (req, res) => {
     console.log(`[Push] SINAL DE VIDA: ${dev.name} (${token})`);
 
     // 1. Atualizar Sinal de Vida (Heartbeat)
-    // Deixamos o processor atualizar o status para 'online' e enviar o alerta
-    await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$2", [dev.id]);
+    // Atualizamos o last_seen e deixamos o processor enviar o alerta de online se necessário
+    await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [dev.id]);
     
     // Grava métrica de latência e solar
     await pool.query(`

@@ -15,10 +15,10 @@ def escape_html(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 DATABASE_URL    = sanitize(os.environ.get("DATABASE_URL", ""))
-EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "5"))
-OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "45")) # Reduzido para 45s para alerta rápido
-ALERT_COOLDOWN  = int(os.getenv("ALERT_COOLDOWN", "120"))
-PING_TIMEOUT    = int(os.getenv("PING_TIMEOUT", "3"))
+EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "2")) # Ciclo mais rápido: 2s
+OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "15")) # Timeout agressivo: 15s
+ALERT_COOLDOWN  = int(os.getenv("ALERT_COOLDOWN", "60"))
+PING_TIMEOUT    = int(os.getenv("PING_TIMEOUT", "2"))
 PING_COUNT      = int(os.getenv("PING_COUNT", "1"))
 
 # Telegram/Email globais (superadmin)
