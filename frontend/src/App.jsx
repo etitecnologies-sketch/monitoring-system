@@ -13,8 +13,8 @@ function useIsMobile() {
 
 const getInitialAPI = () => {
   const envApi = import.meta.env.VITE_API_URL;
-  // Limpa aspas, crases e espaços que podem vir do Railway
-  const cleanApi = (envApi || "").replace(/["'`\s]/g, "").trim();
+  // Limpa TUDO: aspas, crases, espaços e também quebras de linha ou caracteres invisíveis
+  const cleanApi = (envApi || "").replace(/["'`\s\n\r]/g, "").trim();
   
   if (cleanApi && cleanApi.length > 5) return cleanApi;
   
@@ -31,7 +31,7 @@ const getInitialAPI = () => {
 
 const API = getInitialAPI().replace(/\/$/, "");
 
-console.log("🚀 API URL (Limpa):", API);
+console.log("🚀 DEBUG API URL:", `|${API}|`); // O pipe | ajuda a ver se tem espaço sobrando
 
 const getToken = () => localStorage.getItem("token");
 const setToken = (t) => localStorage.setItem("token", t);
@@ -41,7 +41,10 @@ async function api(path, opts = {}) {
   const token = getToken();
 
   try {
-    const res = await fetch(`${API}${path}`, {
+    const url = `${API}${path}`;
+    console.log(`📡 Chamando API: ${url}`);
+    
+    const res = await fetch(url, {
       ...opts,
       headers: {
         "Content-Type": "application/json",
