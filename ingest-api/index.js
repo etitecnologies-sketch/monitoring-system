@@ -244,12 +244,28 @@ app.post("/devices/:id/regenerate-token", auth, async (req, res) => {
 
 app.post("/devices/:id/test", auth, async (req, res) => {
   try {
-    const dr = await pool.query("SELECT ip_address, ddns_address, monitor_port FROM devices WHERE id=$1", [req.params.id]);
-    const { ip_address, ddns_address, monitor_port } = dr.rows[0];
-    const targetHost = ddns_address || ip_address;
+    const dr = await pool.query("SELECT name, ip_address, ddns_address, monitor_port, last_seen, status FROM devices WHERE id=$1", [req.params.id]);
+    const { name, ip_address, ddns_address, monitor_port, last_seen, status } = dr.rows[0];
     
+    // Se o dispositivo enviou sinal recentemente via Auto Registro (Push), consideramos OK
+    const now = new Date();
+    const isRecentlySeen = last_seen && (now - new Date(last_seen)) < 120000; // 2 minutos
+
+    if (isRecentlySeen && status === 'online') {
+      return res.json({ alive: true, message: `✅ ${name} está conectado via Auto Registro / Cloud Push!` });
+    }
+
+    const targetHost = ddns_address || ip_address;
     if (!targetHost || !monitor_port) return res.status(400).json({ error: "Endereço (IP/DDNS) ou Porta não configurados" });
     
+    // Se for IP local, avisamos que precisa do Auto Registro
+    if (targetHost.startsWith("192.168.") || targetHost.startsWith("10.") || targetHost.startsWith("172.")) {
+      return res.json({ 
+        alive: false, 
+        message: `ℹ️ O dispositivo usa IP local (${targetHost}). Certifique-se de que o Auto Registro está configurado na câmera apontando para o nosso servidor.` 
+      });
+    }
+
     const socket = new net.Socket();
     socket.setTimeout(8000);
     socket.on("connect", () => { socket.destroy(); res.json({ alive: true, message: `Conectado com sucesso em ${targetHost}:${monitor_port}!` }); });
