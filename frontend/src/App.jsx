@@ -876,7 +876,7 @@ function DevicesPage({ userRole, userClientId }) {
 
   useEffect(() => { 
     load(); 
-    const t = setInterval(load, 10000); 
+    const t = setInterval(load, 2000); // REFRESH CADA 2 SEGUNDOS (MODO REAL-TIME)
     return () => clearInterval(t); 
   }, [load]);
 
@@ -1075,7 +1075,7 @@ function Dashboard({ userRole }) {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 10000);
+    const t = setInterval(load, 2000); // REFRESH CADA 2 SEGUNDOS (MODO REAL-TIME)
     return () => clearInterval(t);
   }, [load]);
 
@@ -1141,48 +1141,54 @@ function Dashboard({ userRole }) {
           </div>
         )}
 
-        <div style={S.card}>
-          <div style={S.sectionTitle}>Alertas Recentes</div>
-          {alerts.slice(0, 5).length === 0 && <div style={{ color: "#3a5070", fontSize: 11 }}>Nenhum alerta</div>}
-          {alerts.slice(0, 5).map((a) => (
-            <div key={a.id} style={{ marginBottom: 9, paddingBottom: 9, borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                <span style={{ fontSize: 11, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.trigger_name || a.expression}</span>
-                <span style={S.badge(a.alert_type==="offline"?"#ef4444":"#f59e0b")}>{a.alert_type==="offline"?"🔴 off":"⚠️"}</span>
-              </div>
-              <div style={{ fontSize: 10, color: "#3a5070", marginTop: 2 }}>{a.device_name||a.host} {a.client_name ? `— ${a.client_name}` : ""}</div>
+      <div style={S.card}>
+        <div style={S.sectionTitle}>Alertas Recentes (24h)</div>
+        {alerts.slice(0, 8).length === 0 && <div style={{ color: "#3a5070", fontSize: 11 }}>Nenhum alerta</div>}
+        {alerts.slice(0, 8).map((a) => (
+          <div key={a.id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.trigger_name || a.expression.toUpperCase()}</span>
+              <span style={S.badge(a.alert_type==="offline"?"#ef4444":"#f59e0b")}>{a.alert_type==="offline"?"🔴 OFFLINE":"⚠️ AVISO"}</span>
             </div>
-          ))}
-        </div>
+            <div style={{ fontSize: 10, color: "#38bdf8", marginTop: 4 }}>{a.device_name||a.host}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+              <span style={{ fontSize: 9, color: "#475569" }}>🕒 {new Date(a.fired_at).toLocaleString("pt-BR")}</span>
+              <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700 }}>{a.value != null ? `${a.value.toFixed(1)}ms` : ""}</span>
+            </div>
+          </div>
+        ))}
+      </div>
       </div>
 
       <div style={S.card}>
         <div style={S.sectionTitle}>Dispositivos em Tempo Real</div>
         <div style={{ 
           display: "grid", 
-          gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(220px, 1fr))", 
+          gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(240px, 1fr))", 
           gap: 15 
         }}>
           {devices.filter((d) => d.status==="online").slice(0,12).map((d) => (
             <div key={d.id} style={{ 
-              background: "rgba(255,255,255,0.02)", 
-              border: "1px solid rgba(255,255,255,0.05)", 
-              borderRadius: 12, 
-              padding: 12,
-              position: "relative"
+              background: "rgba(10, 15, 26, 0.4)", 
+              border: "1px solid rgba(56, 189, 248, 0.15)", 
+              borderRadius: 14, 
+              padding: 14,
+              position: "relative",
+              boxShadow: "0 4px 15px rgba(0,0,0,0.2)"
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <div style={{ 
-                  width: 32, height: 32, borderRadius: 8, 
+                  width: 36, height: 36, borderRadius: 10, 
                   background: "rgba(56, 189, 248, 0.1)", 
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 16
+                  fontSize: 18,
+                  border: "1px solid rgba(56, 189, 248, 0.2)"
                 }}>
                   {deviceIcon(d.device_type)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
-                  <div style={{ fontSize: 9, color: "#64748b" }}>{d.client_name||"—"}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                  <div style={{ fontSize: 9, color: "#38bdf8", fontWeight: 600 }}>{d.client_name||"—"}</div>
                 </div>
               </div>
               
@@ -1190,29 +1196,32 @@ function Dashboard({ userRole }) {
                 {d.last_cpu != null ? (
                   <>
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#94a3b8", marginBottom: 4 }}>
-                        <span>CPU</span><span style={{ color: "#38bdf8" }}>{(d.last_cpu||0).toFixed(0)}%</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#64748b", marginBottom: 4 }}>
+                        <span>CPU</span><span style={{ color: "#38bdf8", fontWeight: 700 }}>{(d.last_cpu||0).toFixed(0)}%</span>
                       </div>
                       <Bar value={d.last_cpu} color="#38bdf8" />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#94a3b8", marginBottom: 4 }}>
-                        <span>RAM</span><span style={{ color: "#a78bfa" }}>{(d.last_memory||0).toFixed(0)}%</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#64748b", marginBottom: 4 }}>
+                        <span>RAM</span><span style={{ color: "#a78bfa", fontWeight: 700 }}>{(d.last_memory||0).toFixed(0)}%</span>
                       </div>
                       <Bar value={d.last_memory} color="#a78bfa" />
                     </div>
                   </>
                 ) : (
-                  <div style={{ flex: 1, textAlign: "center", padding: "10px 0", background: "rgba(0,0,0,0.1)", borderRadius: 6 }}>
-                    <div style={{ fontSize: 10, color: "#38bdf8", fontWeight: 700 }}>CLOUD MONITOR</div>
-                    <div style={{ fontSize: 8, color: "#4a6080" }}>MODO ONLINE ATIVO</div>
+                  <div style={{ flex: 1, textAlign: "center", padding: "8px 0", background: "rgba(56, 189, 248, 0.05)", borderRadius: 8, border: "1px solid rgba(56, 189, 248, 0.1)" }}>
+                    <div style={{ fontSize: 10, color: "#38bdf8", fontWeight: 800 }}>MODO PUSH / AUTO</div>
+                    <div style={{ fontSize: 8, color: "#4a6080" }}>{d.mac_address || d.serial_number || "SINAL OK"}</div>
                   </div>
                 )}
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
-                <div style={{ fontSize: 9, color: "#475569" }}>📡 {Math.round(d.last_latency||0)}ms</div>
-                <div style={{ fontSize: 9, color: "#22c55e", fontWeight: 600 }}>● ONLINE</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.03)" }}>
+                <div style={{ fontSize: 10, color: "#22c55e", fontWeight: 800, textShadow: "0 0 10px rgba(34, 197, 94, 0.4)" }}>● ONLINE</div>
+                <div style={{ textAlign: "right" }}>
+                   <div style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>{Math.round(d.last_latency||0)}<span style={{fontSize:8, marginLeft:2, color:"#4a6080"}}>ms</span></div>
+                   <div style={{ fontSize: 7, color: "#475569" }}>{new Date(d.last_seen).toLocaleTimeString("pt-BR")}</div>
+                </div>
               </div>
             </div>
           ))}
