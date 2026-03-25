@@ -4,6 +4,11 @@ from contextlib import contextmanager
 import psycopg2
 import concurrent.futures
 
+print("==================================================")
+print(">>> NEXUSWATCH PROCESSOR STARTING UP... <<<")
+print(f">>> TIME: {datetime.datetime.now()} <<<")
+print("==================================================")
+
 # Configuração de fuso horário local (Brasil/Brasília)
 TIMEZONE_DISPLAY = datetime.timezone(datetime.timedelta(hours=-3))
 
@@ -547,7 +552,7 @@ def check_new_events(cur, conn):
 
 def evaluate_once():
     # Print de batimento cardíaco para provar que o script não travou
-    # print(f".", end="", flush=True) 
+    print(f"[{now_display()}] --- CICLO DE MONITORAMENTO ATIVO ---") 
     with get_conn() as conn:
         cur=conn.cursor()
         check_ping_devices(cur,conn)

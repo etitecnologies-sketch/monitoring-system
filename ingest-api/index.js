@@ -872,6 +872,44 @@ tcpServer.listen(TCP_PORT, "0.0.0.0", () => {
   console.log(`=========================================`);
 });
 
+// --- MONITORAMENTO FORA DA CAIXA (DETECÇÃO DE QUEDA) ---
+// Se o Processor (Python) não estiver rodando, este loop garante que os alertas subam.
+setInterval(async () => {
+  try {
+    const dropped = await pool.query(`
+      UPDATE devices 
+      SET status = 'offline'
+      WHERE last_seen IS NOT NULL 
+        AND status != 'offline'
+        AND (NOW() - last_seen) > INTERVAL '15 seconds'
+      RETURNING id, name, client_id
+    `);
+
+    for (const dev of dropped.rows) {
+      console.log(`[MONITOR API] 🚨 Queda detectada: ${dev.name}`);
+      const tgMsg = `❌ <b>${dev.name}</b>\n<b>DISPOSITIVO OFFLINE</b>\nData: ${new Date().toLocaleString("pt-BR")}`;
+      
+      const clientRes = await pool.query("SELECT telegram_token, telegram_chat_id FROM clients WHERE id=$1", [dev.client_id]);
+      const cData = clientRes.rows[0];
+      const tok = cData?.telegram_token || process.env.TG_TOKEN;
+      const cid = cData?.telegram_chat_id || process.env.TG_CHAT_ID;
+
+      if (tok && cid) {
+        fetch(`https://api.telegram.org/bot${tok}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: cid, text: tgMsg, parse_mode: "HTML" })
+        }).catch(e => console.error("Erro queda API:", e.message));
+      }
+      
+      // Grava métrica de queda para o dashboard
+      await pool.query("INSERT INTO metrics (time, host, device_id, latency_ms, status) VALUES (NOW(), $1, $2, 0, 'offline')", [dev.name, dev.id]);
+    }
+  } catch (err) {
+    // console.error("[MONITOR API] Erro:", err.message);
+  }
+}, 5000);
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`=========================================`);
   console.log(`🚀 NexusWatch API Online na Porta: ${PORT}`);
