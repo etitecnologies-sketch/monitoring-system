@@ -388,12 +388,12 @@ app.post("/push", metricsLimiter, async (req, res) => {
       msg += `Host: ${dev.name}\n`;
       msg += `Data do Evento: ${new Date().toLocaleString("pt-BR")}\n`;
       msg += `Detalhes do Equipamento: ${device_type || 'other'} - ${mac_address || 'N/A'} - ${serial_number || 'N/A'}\n`;
-      if (client.rows[0]?.name) msg += `Descrição: ${client.rows[0].name}\n`;
-      msg += `Indicação: Verifique as imagens do canal ${channel || "N/A"}. ${description || ""}`;
-
       // Telegram (Se configurado no cliente)
-      const client = await pool.query("SELECT telegram_token, telegram_chat_id, phone FROM clients WHERE id=$1", [dev.client_id]);
-      const cData = client.rows[0];
+      const clientRes = await pool.query("SELECT name, telegram_token, telegram_chat_id, phone FROM clients WHERE id=$1", [dev.client_id]);
+      const cData = clientRes.rows[0];
+
+      if (cData?.name) msg += `Descrição: ${cData.name}\n`;
+      msg += `Indicação: Verifique as imagens do canal ${channel || "N/A"}. ${description || ""}`;
 
       if (cData?.telegram_token && cData?.telegram_chat_id) {
         const tgUrl = `https://api.telegram.org/bot${cData.telegram_token}/sendMessage`;
