@@ -13,20 +13,24 @@ function useIsMobile() {
 
 const getInitialAPI = () => {
   const envApi = import.meta.env.VITE_API_URL;
-  // Limpa TUDO: aspas, crases, espaços e também quebras de linha ou caracteres invisíveis
-  const cleanApi = (envApi || "").replace(/["'`\s\n\r]/g, "").trim();
+  // Limpa TUDO e força HTTPS
+  let cleanApi = (envApi || "").replace(/["'`\s\n\r]/g, "").trim();
+  
+  if (cleanApi.startsWith("http://")) {
+    cleanApi = cleanApi.replace("http://", "https://");
+  }
   
   if (cleanApi && cleanApi.length > 5) return cleanApi;
   
   const h = window.location.hostname;
   if (h === "localhost" || h === "127.0.0.1") return "http://localhost:3000";
   
-  // Se estiver no Railway e não tiver variável, tenta trocar 'frontend' por 'ingest-api'
+  // Se estiver no Railway e não tiver variável, tenta trocar 'frontend' por 'ingest-api' e força https
   if (h.includes("railway.app") && h.includes("frontend")) {
-    return window.location.protocol + "//" + h.replace("frontend", "ingest-api");
+    return "https://" + h.replace("frontend", "ingest-api");
   }
   
-  return window.location.origin;
+  return window.location.origin.replace("http://", "https://");
 };
 
 const API = getInitialAPI().replace(/\/$/, "");
