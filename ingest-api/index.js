@@ -342,6 +342,30 @@ app.post("/push", metricsLimiter, async (req, res) => {
       `, [dev.id, event_type, channel || 0, description || "", severity || "info"]);
       
       console.log(`[Push] Evento recebido: ${event_type} no canal ${channel} do dispositivo ${dev.name}`);
+
+      // ── Disparar Alertas (Telegram / WhatsApp) ──
+      const msg = `🎬 *Alerta NexusWatch*\n\n🔹 *Evento:* ${event_type.replace(/_/g, " ")}\n🔹 *Device:* ${dev.name}\n🔹 *Canal:* ${channel || "N/A"}\n🔹 *Data:* ${new Date().toLocaleString("pt-BR")}\n\n⚠️ ${description || "Nenhuma descrição disponível."}`;
+
+      // Telegram (Se configurado no cliente)
+      const client = await pool.query("SELECT telegram_token, telegram_chat_id, phone FROM clients WHERE id=$1", [dev.client_id]);
+      const cData = client.rows[0];
+
+      if (cData?.telegram_token && cData?.telegram_chat_id) {
+        const tgUrl = `https://api.telegram.org/bot${cData.telegram_token}/sendMessage`;
+        fetch(tgUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: cData.telegram_chat_id, text: msg, parse_mode: "Markdown" })
+        }).catch(err => console.error("Erro Telegram:", err.message));
+      }
+
+      // WhatsApp (Link direto para o seu celular e do cliente)
+      // Como o WhatsApp não tem API gratuita oficial tão simples quanto o Telegram,
+      // o sistema pode gerar o link ou usar um provedor se você tiver um.
+      // Por enquanto, vamos logar para você saber quem deveria receber.
+      if (cData?.phone) {
+        console.log(`[WhatsApp Alerta] Enviar para: ${cData.phone}`);
+      }
     }
 
     // 3. Notificar via WebSocket (Tempo Real)
@@ -367,6 +391,24 @@ app.post("/push", metricsLimiter, async (req, res) => {
     console.error("[Push Error]:", e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+app.get("/events", auth, async (req, res) => {
+  try {
+    const cid = clientFilter(req);
+    let query = `
+      SELECT e.*, d.name as device_name, c.name as client_name
+      FROM events e
+      JOIN devices d ON d.id = e.device_id
+      JOIN clients c ON c.id = d.client_id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (cid) { params.push(cid); query += ` AND d.client_id=$1`; }
+    query += " ORDER BY e.time DESC LIMIT 100";
+    const r = await pool.query(query, params);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/metrics", metricsLimiter, async (req, res) => {

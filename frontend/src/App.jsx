@@ -290,6 +290,18 @@ const S = {
   sectionTitle: { fontSize: 11, fontWeight: 700, color: "#38bdf8", marginBottom: 16, textTransform: "uppercase", letterSpacing: 2 },
   divider: { borderTop: "1px solid rgba(56, 189, 248, 0.1)", margin: "20px 0" },
   tag: { display: "inline-flex", alignItems: "center", gap: 3, background: "rgba(56, 189, 248, 0.1)", color: "#38bdf8", border: "1px solid rgba(56, 189, 248, 0.3)", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600, marginRight: 6, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
+  eventCard: (severity) => ({
+    padding: "12px 16px",
+    borderRadius: 12,
+    background: severity === "critical" ? "rgba(239, 68, 68, 0.1)" : "rgba(15, 23, 42, 0.4)",
+    border: `1px solid ${severity === "critical" ? "rgba(239, 68, 68, 0.2)" : "rgba(56, 189, 248, 0.1)"}`,
+    marginBottom: 10,
+    display: "flex",
+    gap: 12,
+    alignItems: "center",
+    transition: "transform 0.2s ease",
+    cursor: "default"
+  }),
 };
 
 // ── Components ────────────────────────────────────────────────
@@ -1149,6 +1161,73 @@ function Dashboard({ userRole }) {
   );
 }
 
+// ── Events Page (Analíticos) ──────────────────────────────────
+function EventsPage({ userRole }) {
+  const [events, setEvents] = useState([]);
+  const isMobile = useIsMobile();
+
+  const load = useCallback(() => {
+    api("/events").then((data) => setEvents(Array.isArray(data) ? data : [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const getIcon = (type) => {
+    const t = type.toUpperCase();
+    if (t.includes("PESSOA") || t.includes("HUMAN")) return "👤";
+    if (t.includes("VEICULO") || t.includes("CARRO") || t.includes("CAR")) return "🚗";
+    if (t.includes("VIDEO") || t.includes("PERDA")) return "⚠️";
+    if (t.includes("DISCO") || t.includes("HD") || t.includes("DISK")) return "💾";
+    return "🔔";
+  };
+
+  return (
+    <div>
+      <div style={S.pageTitle}>🎬 Central de Eventos</div>
+      <div style={S.pageSub}>Analíticos de vídeo e hardware em tempo real</div>
+
+      <div style={{ ...S.card, padding: isMobile ? 15 : 24 }}>
+        {events.length === 0 && (
+          <div style={{ textAlign: "center", padding: 40, color: "#4a6080" }}>
+            Nenhum evento detectado recentemente.
+          </div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {events.map((e) => (
+            <div key={e.id} style={S.eventCard(e.severity)}>
+              <div style={{ fontSize: 24 }}>{getIcon(e.event_type)}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ fontWeight: 700, color: "#fff", fontSize: 14 }}>
+                    {e.event_type.replace(/_/g, " ")}
+                  </div>
+                  <div style={{ fontSize: 10, color: "#4a6080", fontFamily: "monospace" }}>
+                    {new Date(e.time).toLocaleString("pt-BR")}
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>
+                  <span style={{ color: "#38bdf8", fontWeight: 600 }}>{e.device_name}</span>
+                  {e.channel > 0 && ` • Canal ${e.channel}`}
+                  {e.client_name && ` • ${e.client_name}`}
+                </div>
+                {e.description && (
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, fontStyle: "italic" }}>
+                    "{e.description}"
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Alerts Page ───────────────────────────────────────────────
 function AlertsPage({ userRole }) {
   const [alerts, setAlerts] = useState([]);
@@ -1725,6 +1804,7 @@ export default function App() {
     { id: "devices",   label: "Devices",    icon: "🖥️" },
     { id: "triggers",  label: "Triggers",   icon: "⚡" },
     { id: "alerts",    label: "Alertas",    icon: "🚨" },
+    { id: "events",    label: "Eventos",    icon: "🎬" },
     { id: "solar", label: "Solar", icon: "☀️" },
   ];
 
@@ -1733,6 +1813,7 @@ export default function App() {
     { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "devices",   label: "Devices",   icon: "🖥️" },
     { id: "alerts",    label: "Alertas",   icon: "🚨" },
+    { id: "events",    label: "Eventos",   icon: "🎬" },
   ];
 
   const NAV = isSuperAdmin ? NAV_SUPERADMIN : NAV_CLIENT;
@@ -1743,6 +1824,7 @@ export default function App() {
     devices:   <DevicesPage userRole={userRole} userClientId={userClientId} />,
     triggers:  <TriggersPage userRole={userRole} />,
     alerts:    <AlertsPage userRole={userRole} />,
+    events:    <EventsPage userRole={userRole} />,
     solar: <SolarPage userRole={userRole} />,
   };
 
