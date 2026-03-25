@@ -33,6 +33,15 @@ app.use((req, res, next) => {
 });
 
 app.get("/", (req, res) => res.json({ status: "online", service: "NexusWatch API", version: "1.0.3" }));
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ status: "ok", db: "connected" });
+  } catch (e) {
+    res.status(500).json({ status: "error", error: e.message });
+  }
+});
+app.get("/ready", (req, res) => res.json({ status: "ready" }));
 app.get("/push", (req, res) => res.json({ message: "Endpoint pronto para receber POST das câmeras." }));
 
 // ── Security & Middleware ────────────────────────────────────

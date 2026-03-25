@@ -58,16 +58,16 @@ const getInitialAPI = () => {
   // 4. Localhost
   if (h === "localhost" || h === "127.0.0.1") return "http://localhost:3000";
   
-  // 5. Railway Auto-detect (Simplificado)
+  // 5. Railway Auto-detect (Melhorado para ser genérico)
   if (h.includes("railway.app")) {
     const parts = h.split(".");
     const subdomain = parts[0];
-    if (subdomain.includes("powerful-unity")) {
-      return "https://" + subdomain.replace("powerful-unity", "ingest-api") + ".up.railway.app";
-    }
+    // Se o usuário está no frontend-xxx.up.railway.app, tenta achar o ingest-api-xxx.up.railway.app
     if (subdomain.includes("frontend")) {
       return "https://" + subdomain.replace("frontend", "ingest-api") + ".up.railway.app";
     }
+    // Caso contrário, assume que a API pode estar no mesmo domínio sob o prefixo api
+    return window.location.origin.replace("frontend", "ingest-api");
   }
   
   // 6. Fallback final: Mesma origem
