@@ -367,28 +367,26 @@ def check_offline_devices(cur, conn):
     cur.execute("""
         SELECT d.id, d.name, d.hostname, d.status, d.client_id, d.device_type, d.mac_address, d.serial_number,
                EXTRACT(EPOCH FROM (NOW() - d.last_seen)) as seconds_silent,
-               (SELECT latency_ms FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_latency,
-               d.last_seen AT TIME ZONE 'UTC' as last_seen_utc
+               (SELECT latency_ms FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_latency
         FROM devices d
         WHERE d.last_seen IS NOT NULL
     """)
     rows = cur.fetchall()
     
     for row in rows:
-        dev_id, dev_name, hostname, db_status, client_id, dtype, mac, sn, seconds_silent, last_latency, last_seen_utc = row
+        dev_id, dev_name, hostname, db_status, client_id, dtype, mac, sn, seconds_silent, last_latency = row
         
         # Se seconds_silent for None ou negativo (erro de relógio), tratamos como 0
         silent = float(seconds_silent) if seconds_silent is not None else 0
         
+        # LOG OBRIGATÓRIO PARA DEBUG - Ver no console do Railway
+        print(f"[MONITOR] {dev_name} | Silêncio: {silent:.1f}s | Status: {db_status}")
+
         is_offline = silent > OFFLINE_TIMEOUT
         
-        # Log de monitoramento para o console do Railway
-        if silent > 5:
-            logger.info(f"[MONITOR] {dev_name} está em silêncio há {silent:.1f}s (Limite: {OFFLINE_TIMEOUT}s)")
-
         # Mudança de estado: ONLINE -> OFFLINE
         if is_offline and db_status != 'offline':
-            logger.warning(f"🚨 QUEDA DETECTADA: {dev_name} ({silent:.1f}s sem sinal)")
+            print(f"🚨🚨🚨 DISPARANDO QUEDA: {dev_name} (limite {OFFLINE_TIMEOUT}s atingido)")
             try:
                 # 1. Força status offline no DB
                 cur.execute("UPDATE devices SET status='offline' WHERE id=%s", (dev_id,))
@@ -416,12 +414,12 @@ def check_offline_devices(cur, conn):
                 send_telegram(msg, tg_tok, tg_cid)
                 send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
             except Exception as e:
-                logger.error(f"Erro ao processar queda de {dev_name}: {e}")
+                print(f"ERRO AO DISPARAR QUEDA: {e}")
                 conn.rollback()
 
         # Mudança de estado: OFFLINE -> ONLINE
         elif not is_offline and db_status == 'offline':
-            logger.info(f"✅ RETORNO DETECTADO: {dev_name} (sinal recuperado)")
+            print(f"✅✅✅ DISPARANDO RETORNO: {dev_name} (sinal recebido)")
             try:
                 cur.execute("UPDATE devices SET status='online' WHERE id=%s", (dev_id,))
                 cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,%s,'online')", (hostname or dev_name, dev_id, last_latency or 0))
@@ -440,7 +438,7 @@ def check_offline_devices(cur, conn):
                 send_telegram(msg, tg_tok, tg_cid)
                 send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
             except Exception as e:
-                logger.error(f"Erro ao processar retorno de {dev_name}: {e}")
+                print(f"ERRO AO DISPARAR RETORNO: {e}")
                 conn.rollback()
 
 def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None,client_id=None):
