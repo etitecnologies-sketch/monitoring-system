@@ -807,15 +807,34 @@ const tcpServer = net.createServer((socket) => {
           
           console.log(`[TCP] Dispositivo Identificado: ${dev.name} (${dev.serial_number || dev.mac_address})`);
           
-          // Deixamos o processor atualizar o status para 'online' e enviar o alerta
-          // Apenas atualizamos o sinal de vida
-          await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [dev.id]);
+          // --- LOGICA FORA DA CAIXA: ALERTA DE RETORNO PELA API ---
+          if (dev.status === 'offline') {
+            console.log(`[API] ⚡ DISPARANDO RETORNO IMEDIATO: ${dev.name}`);
+            const tgMsg = `✅ <b>${dev.name}</b>\n<b>CONEXÃO RECUPERADA</b>\nData: ${new Date().toLocaleString("pt-BR")}`;
+            
+            // Envia Telegram (Usando os tokens do cliente se existirem)
+            const clientRes = await pool.query("SELECT telegram_token, telegram_chat_id FROM clients WHERE id=$1", [dev.client_id]);
+            const cData = clientRes.rows[0];
+            const tok = cData?.telegram_token || process.env.TG_TOKEN;
+            const cid = cData?.telegram_chat_id || process.env.TG_CHAT_ID;
+            
+            if (tok && cid) {
+              fetch(`https://api.telegram.org/bot${tok}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ chat_id: cid, text: tgMsg, parse_mode: "HTML" })
+              }).catch(e => console.error("Erro retorno API:", e.message));
+            }
+          }
+
+          // Atualiza sinal de vida e força status online
+          await pool.query("UPDATE devices SET last_seen=NOW(), status='online' WHERE id=$1", [dev.id]);
           
           // Grava métrica de latência
           await pool.query(`
             INSERT INTO metrics (time, host, device_id, latency_ms, status)
-            VALUES (NOW(), $1, $2, $3, $4)
-          `, [dev.name, dev.id, latency, "online"]);
+            VALUES (NOW(), $1, $2, $3, 'online')
+          `, [dev.name, dev.id, latency]);
 
           // Notifica WebSocket
           const WEBSOCKET_URL = process.env.WEBSOCKET_URL;
