@@ -314,10 +314,12 @@ app.post("/metrics", metricsLimiter, async (req, res) => {
       [hr.rows[0].id, host, devId, cpu||0, memory||0, latency_ms||0]);
     
     // Publish to WebSocket
-    fetch(`${WEBSOCKET_URL}/publish`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ host, cpu, memory, latency_ms, device_id: devId, client_id: cid, time: new Date().toISOString() }),
-    }).catch(() => {});
+    if (WEBSOCKET_URL) {
+      fetch(`${WEBSOCKET_URL}/publish`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host, cpu, memory, latency_ms, device_id: devId, client_id: cid, time: new Date().toISOString() }),
+      }).catch(() => {});
+    }
 
     res.status(201).json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -368,6 +370,13 @@ async function cloudMonitor(deviceId = null) {
         const notePrefix = isPrivate ? "🛡️ VPN " : "☁️ Cloud ";
         await pool.query("UPDATE devices SET status=$1, last_seen=NOW(), notes=$2 WHERE id=$3", [status, error ? `${notePrefix}Error: ${error}` : `${notePrefix}OK`, dev.id]);
         await pool.query("INSERT INTO metrics (time, host, device_id, latency_ms, status) VALUES (NOW(), $1, $2, $3, $4)", [targetHost, dev.id, latency, status]);
+        
+        if (WEBSOCKET_URL) {
+          fetch(`${WEBSOCKET_URL}/publish`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ host: targetHost, latency_ms: latency, status, device_id: dev.id, client_id: dev.client_id, time: new Date().toISOString() }),
+          }).catch(() => {});
+        }
       };
 
       if (false) { // VPN desativada temporariamente para estabilidade
