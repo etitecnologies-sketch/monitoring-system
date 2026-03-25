@@ -621,57 +621,9 @@ app.post("/push", metricsLimiter, async (req, res) => {
       
       console.log(`[Push] Evento: ${finalEventType} em ${dev.name}`);
 
-      // ── Alertas (Telegram) ──
-      const devDetails = await pool.query("SELECT mac_address, serial_number, device_type FROM devices WHERE id=$1", [dev.id]);
-      const { mac_address, serial_number, device_type } = devDetails.rows[0];
-
-      let msg = `🎬 <b>Alerta NexusWatch</b>\n\n`;
-      msg += `❌ <b>${escapeHtml(dev.name)}</b>\n`;
-      msg += `Problema: ${escapeHtml(finalEventType)}\n\n`;
-      msg += `Host: ${escapeHtml(dev.name)}\n`;
-      msg += `Data: ${new Date().toLocaleString("pt-BR")}\n`;
-      msg += `Equipamento: ${escapeHtml(device_type || 'other')} - ${escapeHtml(mac_address || 'N/A')} - ${escapeHtml(serial_number || 'N/A')}\n`;
-
-      const clientRes = await pool.query("SELECT name, telegram_token, telegram_chat_id, wa_instance, wa_token, wa_number FROM clients WHERE id=$1", [dev.client_id]);
-      const cData = clientRes.rows[0];
-
-      if (cData?.name) msg += `Descrição: ${escapeHtml(cData.name)}\n`;
-      msg += `Indicação: Verifique as imagens do Canal ${finalChannel}. ${escapeHtml(finalDescription)}`;
-
-      // Telegram
-      const tgToken = cData?.telegram_token || TG_TOKEN_GLOBAL;
-      const tgChatId = cData?.telegram_chat_id || TG_CHAT_ID_GLOBAL;
-
-      if (tgToken && tgChatId) {
-        fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: tgChatId, text: msg, parse_mode: "HTML" })
-        }).then(r => {
-          if (!r.ok) r.text().then(t => console.error(`[Telegram Error] Status: ${r.status}, Body: ${t}`));
-          else console.log(`[Telegram] Alerta de evento enviado para ${tgChatId}`);
-        }).catch((err) => console.error("[Telegram Error] Fetch exception:", err.message));
-      }
-
-      // WhatsApp (Evolution API)
-      const waApiUrl = WA_API_URL_GLOBAL;
-      const waInstance = cData?.wa_instance || WA_INSTANCE_GLOBAL;
-      const waToken = cData?.wa_token || WA_TOKEN_GLOBAL;
-      const waNumber = cData?.wa_number || WA_NUMBER_GLOBAL;
-
-      if (waApiUrl && waInstance && waToken && waNumber) {
-        // Para WhatsApp removemos as tags <b> pois ele usa * para negrito
-        const waMsg = msg.replace(/<b>/g, "*").replace(/<\/b>/g, "*");
-        fetch(`${waApiUrl.replace(/\/$/, "")}/message/sendText/${waInstance}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "apikey": waToken },
-          body: JSON.stringify({
-            number: waNumber,
-            options: { delay: 1200, presence: "composing", linkPreview: false },
-            textMessage: { text: waMsg }
-          })
-        }).catch((err) => console.error("Erro WhatsApp Ingest:", err.message));
-      }
+      // ── Alertas (Centralizados no Processor) ──
+      // O Processor (Python) monitora a tabela 'events' e envia para Telegram/WhatsApp
+      // garantindo fuso horário correto e formatação padronizada.
     }
 
     // 3. WebSocket (Realtime)
@@ -822,7 +774,8 @@ async function cloudMonitor(deviceId = null) {
     }
   } catch (e) { console.error("Cloud Monitor Error:", e.message); }
 }
-setInterval(cloudMonitor, 60000);
+// O CloudMonitor foi desativado aqui pois o Processor (Python) já faz essa checagem de forma mais eficiente e com alertas centralizados.
+// setInterval(cloudMonitor, 60000);
 
 const PORT = process.env.PORT || 3000;
 const TCP_PORT = 3001; // Porta para o Registro Automático da Intelbras
@@ -854,8 +807,9 @@ const tcpServer = net.createServer((socket) => {
           
           console.log(`[TCP] Dispositivo Identificado: ${dev.name} (${dev.serial_number || dev.mac_address})`);
           
-          // Atualiza status para online
-          await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", ["online", dev.id]);
+          // Deixamos o processor atualizar o status para 'online' e enviar o alerta
+          // Apenas atualizamos o sinal de vida
+          await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [dev.id]);
           
           // Grava métrica de latência
           await pool.query(`

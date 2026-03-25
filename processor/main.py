@@ -51,6 +51,7 @@ device_online_state = {}
 alert_cooldown_map  = {}
 ping_state          = {}
 last_summary_time   = 0
+last_event_id       = 0
 
 DEVICE_TYPE_ICONS = {
     "server":"🖥️","camera":"📷","router":"🌐","switch":"🔀",
@@ -327,8 +328,7 @@ def check_ping_devices(cur, conn):
                  f"Latência Atual: {latency:.1f}ms\n"
                  f"Data da Normalização: {now_display()}\n"
                  f"Detalhes: {d_icon} {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n"
-                 +(f"Descrição: {ecl_name}
-" if cl_name else "")
+                 +(f"Descrição: {ecl_name}\n" if cl_name else "")
                  +(f"Tags: {escape_html(tags_str)}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
@@ -548,11 +548,65 @@ def evaluate_triggers(cur, conn):
             if value is not None and float(value)>float(threshold):
                 fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id,device_client_id or trigger_client_id)
 
+def check_new_events(cur, conn):
+    """Monitora a tabela de eventos (analíticos) e envia para o Telegram"""
+    global last_event_id
+    
+    # Na primeira execução, pega o ID do último evento para não enviar histórico antigo
+    if last_event_id == 0:
+        cur.execute("SELECT COALESCE(MAX(id), 0) FROM events")
+        last_event_id = cur.fetchone()[0]
+        return
+
+    cur.execute("""
+        SELECT e.id, e.event_type, e.channel, e.description, e.severity, e.time,
+               d.name as device_name, d.client_id, d.device_type, d.mac_address, d.serial_number
+        FROM events e
+        JOIN devices d ON d.id = e.device_id
+        WHERE e.id > %s
+        ORDER BY e.id ASC
+    """, (last_event_id,))
+    
+    events = cur.fetchall()
+    for ev in events:
+        eid, etype, channel, desc, sev, etime, dname, cid, dtype, mac, sn = ev
+        last_event_id = eid
+        
+        # Prepara a mensagem de alerta analítico
+        edname = escape_html(dname)
+        etype_display = escape_html(etype.replace("_", " ").upper())
+        edesc = escape_html(desc)
+        etime_str = etime.astimezone(TIMEZONE_DISPLAY).strftime("%d/%m/%Y %H:%M:%S")
+        
+        # Ícone baseado na severidade ou tipo
+        icon = "🎬"
+        if "pessoa" in etype.lower() or "human" in etype.lower(): icon = "👤"
+        elif "veiculo" in etype.lower() or "car" in etype.lower(): icon = "🚗"
+        elif sev.lower() == "critical": icon = "🚨"
+
+        tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, cid)
+        
+        msg = (f"{icon} <b>ALERTA ANALÍTICO</b>\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"📷 <b>{edname}</b>\n"
+               f"Evento: <b>{etype_display}</b>\n"
+               f"Canal: {channel}\n"
+               f"Horário: {etime_str}\n"
+               f"━━━━━━━━━━━━━━━━━━━━\n"
+               f"📝 {edesc}\n"
+               f"📍 {escape_html(cl_name or 'NexusWatch')}")
+        
+        send_telegram(msg, tg_tok, tg_cid)
+        # Opcional: enviar para WhatsApp se for crítico
+        if sev.lower() == "critical":
+            send_whatsapp(msg.replace("<b>", "*").replace("</b>", "*"), wa_inst, wa_tok, wa_num)
+
 def evaluate_once():
     with get_conn() as conn:
         cur=conn.cursor()
         check_ping_devices(cur,conn)
         check_offline_devices(cur,conn)
+        check_new_events(cur,conn) # Adicionado monitoramento de eventos analíticos
         send_status_summary(cur)
         evaluate_triggers(cur,conn)
 
