@@ -8,6 +8,7 @@ const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 const net = require("net");
 const dns = require("dns").promises;
+const xmlparser = require("express-xml-bodyparser");
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.use((req, res, next) => {
 // ── Security & Middleware ────────────────────────────────────
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
+app.use(xmlparser({ explicitArray: false, normalize: true })); // Suporte para XML (Intelbras/Hikvision)
 app.use(cors({ origin: "*", credentials: true }));
 
 const loginLimiter = rateLimit({
@@ -335,104 +337,98 @@ app.get("/alerts", auth, async (req, res) => {
 
 // ── PUSH UNIVERSAL (Recepcionista Cloud) ─────────────────────
 app.post("/push", metricsLimiter, async (req, res) => {
-  // Tenta pegar o token de várias formas (Header, Body ou Query)
-  // Aceita: x-device-token, token, ID (comum em DVRs), SN, SerialNumber, MAC
+  // Tenta pegar o token de várias formas (Header, Body, XML, ou Query)
+  // Intelbras/Hikvision enviam XML em tags como <macAddress>, <serialNumber>
+  const body = req.body || {};
+  const xmlData = body.eventnotificationalert || body.event || {}; // Se o middleware xml-bodyparser funcionou
+
   const token = req.headers["x-device-token"] || 
-                req.body.token || 
+                body.token || 
                 req.query.token || 
-                req.body.ID || 
-                req.body.SN || 
-                req.body.SerialNumber || 
-                req.body.MAC ||
+                body.ID || 
+                body.SN || 
+                body.SerialNumber || 
+                body.MAC ||
+                xmlData.macaddress || // XML Intelbras/Hikvision
+                xmlData.serialnumber ||
                 req.query.id;
 
   const { 
     status, cpu, memory, disk, latency, 
     event_type, channel, description, severity,
     type // Alguns enviam 'type' em vez de 'event_type'
-  } = req.body;
+  } = body;
 
-  const finalEventType = event_type || type;
+  // Extração de eventos do XML (Intelbras/Hikvision)
+  const finalEventType = event_type || type || xmlData.eventtype || xmlData.event;
+  const finalChannel = channel || xmlData.channelid || xmlData.channel || 0;
+  const finalDescription = description || xmlData.eventdescription || xmlData.description || "";
 
   if (!token) {
-    console.log("[Push] Requisição sem identificador recebida:", JSON.stringify(req.body));
+    console.log("[Push] Requisição sem identificador recebida:", JSON.stringify(body));
     return res.status(401).json({ error: "Identification (Token/SN/MAC) required" });
   }
 
   try {
-    // Busca por Token ou MAC ou SN para facilitar a vida do usuário
+    // Busca por Token ou MAC ou SN (limpando pontuação do MAC se necessário)
+    const cleanToken = String(token).replace(/[:-]/g, "").toUpperCase();
+    
     const dr = await pool.query(`
       SELECT id, client_id, name 
       FROM devices 
-      WHERE token=$1 OR mac_address=$1 OR serial_number=$1
+      WHERE token=$1 
+         OR UPPER(REPLACE(REPLACE(mac_address, ':', ''), '-', '')) = $2
+         OR serial_number = $1
       LIMIT 1
-    `, [token]);
+    `, [token, cleanToken]);
+
     if (dr.rows.length === 0) {
-      // Log para debug se o token estiver vindo em um campo estranho
-      console.log(`[Push] Token não encontrado no DB. Body completo:`, JSON.stringify(req.body));
-      return res.status(401).json({ error: "Invalid token" });
+      console.log(`[Push] Token/MAC/SN não encontrado: ${token}`);
+      return res.status(401).json({ error: "Invalid identification" });
     }
     const dev = dr.rows[0];
 
-    console.log(`[Push] SINAL DE VIDA RECEBIDO: ${dev.name} via HTTP Push`);
+    console.log(`[Push] SINAL DE VIDA: ${dev.name} (${token})`);
 
-    // 1. Atualizar Status e Telemetria de Hardware
-    // Se chegou qualquer coisa no /push com token válido, o dispositivo está VIVO
+    // 1. Atualizar Status
     await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", ["online", dev.id]);
     
-    // Grava métricas de performance se enviadas
-    if (cpu !== undefined || memory !== undefined || disk !== undefined) {
-      await pool.query(`
-        INSERT INTO metrics (time, host, device_id, cpu, memory, disk_percent, latency_ms, status)
-        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
-      `, [dev.name, dev.id, cpu || 0, memory || 0, disk || 0, latency || 0, status || "online"]);
-    }
-
-    // 2. Registrar Eventos de Analíticos (Movimento, Pessoas, etc.)
+    // 2. Registrar Eventos
     if (finalEventType) {
       await pool.query(`
         INSERT INTO events (device_id, event_type, channel, description, severity)
         VALUES ($1, $2, $3, $4, $5)
-      `, [dev.id, finalEventType, channel || 0, description || "", severity || "info"]);
+      `, [dev.id, finalEventType, finalChannel, finalDescription, severity || "info"]);
       
-      console.log(`[Push] Evento recebido: ${finalEventType} no canal ${channel} do dispositivo ${dev.name}`);
+      console.log(`[Push] Evento: ${finalEventType} em ${dev.name}`);
 
-      // ── Disparar Alertas (Telegram / WhatsApp) ──
+      // ── Alertas (Telegram) ──
       const devDetails = await pool.query("SELECT mac_address, serial_number, device_type FROM devices WHERE id=$1", [dev.id]);
       const { mac_address, serial_number, device_type } = devDetails.rows[0];
 
       let msg = `🎬 *Alerta NexusWatch*\n\n`;
       msg += `❌ ${dev.name}\n`;
-      msg += `Problema: Evento detectado: ${finalEventType.replace(/_/g, " ")}\n\n`;
+      msg += `Problema: Evento detectado: ${String(finalEventType).replace(/_/g, " ")}\n\n`;
       msg += `Host: ${dev.name}\n`;
-      msg += `Data do Evento: ${new Date().toLocaleString("pt-BR")}\n`;
-      msg += `Detalhes do Equipamento: ${device_type || 'other'} - ${mac_address || 'N/A'} - ${serial_number || 'N/A'}\n`;
-      // Telegram (Se configurado no cliente)
-      const clientRes = await pool.query("SELECT name, telegram_token, telegram_chat_id, phone FROM clients WHERE id=$1", [dev.client_id]);
+      msg += `Data: ${new Date().toLocaleString("pt-BR")}\n`;
+      msg += `Equipamento: ${device_type || 'other'} - ${mac_address || 'N/A'} - ${serial_number || 'N/A'}\n`;
+
+      const clientRes = await pool.query("SELECT name, telegram_token, telegram_chat_id FROM clients WHERE id=$1", [dev.client_id]);
       const cData = clientRes.rows[0];
 
       if (cData?.name) msg += `Descrição: ${cData.name}\n`;
-      msg += `Indicação: Verifique as imagens do canal ${channel || "N/A"}. ${description || ""}`;
+      msg += `Indicação: Verifique as imagens do canal ${finalChannel}. ${finalDescription}`;
 
       if (cData?.telegram_token && cData?.telegram_chat_id) {
-        const tgUrl = `https://api.telegram.org/bot${cData.telegram_token}/sendMessage`;
-        fetch(tgUrl, {
+        fetch(`https://api.telegram.org/bot${cData.telegram_token}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: cData.telegram_chat_id, text: msg, parse_mode: "Markdown" })
-        }).catch(err => console.error("Erro Telegram:", err.message));
-      }
-
-      // WhatsApp (Link direto para o seu celular e do cliente)
-      // Como o WhatsApp não tem API gratuita oficial tão simples quanto o Telegram,
-      // o sistema pode gerar o link ou usar um provedor se você tiver um.
-      // Por enquanto, vamos logar para você saber quem deveria receber.
-      if (cData?.phone) {
-        console.log(`[WhatsApp Alerta] Enviar para: ${cData.phone}`);
+        }).catch(() => {});
       }
     }
 
-    // 3. Notificar via WebSocket (Tempo Real)
+    // 3. WebSocket (Realtime)
     if (WEBSOCKET_URL) {
       fetch(`${WEBSOCKET_URL}/publish`, {
         method: "POST",
@@ -440,11 +436,9 @@ app.post("/push", metricsLimiter, async (req, res) => {
         body: JSON.stringify({
           type: finalEventType ? "EVENT" : "METRIC",
           device_id: dev.id,
-          client_id: dev.client_id,
           name: dev.name,
-          status: status || "online",
-          cpu, memory, disk, latency,
-          event: finalEventType ? { type: finalEventType, channel, description, severity } : null,
+          status: "online",
+          event: finalEventType ? { type: finalEventType, channel: finalChannel, description: finalDescription } : null,
           time: new Date().toISOString()
         }),
       }).catch(() => {});
