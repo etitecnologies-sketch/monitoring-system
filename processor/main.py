@@ -265,9 +265,8 @@ def check_offline_devices(cur, conn):
         d_icon=device_icon(dtype)
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
-        mac_sn_str = f"MAC: {mac} | SN: {sn}\n" if mac or sn else ""
+        mac_sn_str = f"Detalhes do Equipamento: {dtype or 'other'} - {mac or 'N/A'} - {sn or 'N/A'}\n" if mac or sn else ""
         tg_tok, tg_cid, cl_email, cl_name = get_client_config(cur, client_id)
-        client_suffix = f"\n🏢 Cliente: <b>{cl_name}</b>" if cl_name else ""
 
         if is_offline and not was_offline:
             device_online_state[dev_id]=True
@@ -278,14 +277,13 @@ def check_offline_devices(cur, conn):
             downtime=int((now-last_seen).total_seconds())
             logger.warning(f"OFFLINE: {dev_name}")
             msg=(f"❌ {dev_name}\n"
-                 f"Problema: Agente sem comunicação por {downtime}s\n"
-                 f"Host: {hostname or dev_name}\n"
-                 f"{mac_sn_str}"
+                 f"Problema: IP: {hostname or dev_name} está indisponível\n\n"
+                 f"Host: {dev_name}\n"
                  f"Data do Evento: {now_str()}\n"
-                 f"Último contato: {last_seen.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                 f"{mac_sn_str}"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
                  +(f"Tags: {tags_str}\n" if tags_str else "")
-                 +"Indicação: Agente parou de enviar dados. Verifique conectividade.")
+                 +"Indicação: Verifique a conectividade do dispositivo.")
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
                 f"Device '{dev_name}' parou de enviar dados.\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_str()}", cl_email)
@@ -294,10 +292,10 @@ def check_offline_devices(cur, conn):
             device_online_state[dev_id]=False
             logger.info(f"ONLINE: {dev_name}")
             msg=(f"✅ {dev_name}\n"
-                 f"Normalizado: Agente voltou a enviar dados\n"
-                 f"Host: {hostname or dev_name}\n"
-                 f"{mac_sn_str}"
+                 f"Normalizado: Dispositivo voltou a se comunicar\n\n"
+                 f"Host: {dev_name}\n"
                  f"Data da Normalização: {now_str()}\n"
+                 f"{mac_sn_str}"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
                  +(f"Tags: {tags_str}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
