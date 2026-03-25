@@ -496,6 +496,14 @@ def main():
     logger.info(f"  {APP_NAME} — Multi-tenant Monitor")
     logger.info(f"  interval={EVAL_INTERVAL}s | ping_timeout={PING_TIMEOUT}s")
     logger.info(f"  offline_timeout={OFFLINE_TIMEOUT}s | cooldown={ALERT_COOLDOWN}s")
+    
+    # Teste de envio IMEDIATO ao iniciar para diagnosticar credenciais
+    if TG_TOKEN and TG_CHAT_ID:
+        logger.info(f"Enviando alerta de teste de inicialização para {TG_CHAT_ID}...")
+        send_telegram(f"🔧 <b>{APP_NAME}</b>: Monitor de Alertas Reiniciado.\nVerificando conectividade... ✅")
+    else:
+        logger.error("ERRO: TELEGRAM_TOKEN ou TELEGRAM_CHAT_ID não configurados!")
+
     logger.info(f"  telegram={'ON' if TG_TOKEN else 'OFF'} | chat_id={TG_CHAT_ID[:5]}***")
     logger.info(f"  email={'ON' if SMTP_HOST else 'OFF'}")
     logger.info(f"{'='*52}")
