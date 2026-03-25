@@ -57,6 +57,9 @@ function HostCard({ host, data, deviceMap }) {
   const [loading, setLoading] = useState(false);
   const device  = data.device_id ? deviceMap[data.device_id] : null;
   const isOnline= data.status === "online" && data.time && (Date.now()-new Date(data.time))<60000;
+  const statusColor = isOnline ? "#00f2ff" : "#ff0055";
+  const statusBg = isOnline ? "rgba(0, 242, 255, 0.05)" : "rgba(255, 0, 85, 0.05)";
+  const statusBorder = isOnline ? "rgba(0, 242, 255, 0.3)" : "rgba(255, 0, 85, 0.3)";
   const cpu     = +(data.cpu||0).toFixed(1);
   const mem     = +(data.memory||0).toFixed(1);
   const disk    = +(data.disk_percent||0).toFixed(1);
@@ -92,13 +95,13 @@ function HostCard({ host, data, deviceMap }) {
 
   return (
     <div style={{
-      background: "rgba(15, 15, 24, 0.6)",
-      backdropFilter: "blur(10px)",
-      border: `1px solid ${isOnline?"rgba(0, 242, 255, 0.2)":"rgba(255, 0, 85, 0.15)"}`,
-      borderRadius: 20,
-      padding: isMobile ? 16 : 24,
+      background: "rgba(15, 15, 24, 0.7)",
+      backdropFilter: "blur(12px)",
+      borderRadius: 24,
+      padding: isMobile ? 20 : 28,
+      border: `1px solid ${statusBorder}`,
       transition: "all 0.4s ease",
-      boxShadow: isOnline ? "0 10px 30px rgba(0, 242, 255, 0.05)" : "none",
+      boxShadow: isOnline ? "0 10px 30px rgba(0, 242, 255, 0.05)" : "0 10px 30px rgba(255, 0, 85, 0.05)",
       position: "relative",
       overflow: "hidden"
     }}>
@@ -119,17 +122,17 @@ function HostCard({ host, data, deviceMap }) {
             <div style={{
               width: 44,
               height: 44,
-              background: isOnline ? "rgba(0, 242, 255, 0.05)" : "rgba(255, 0, 85, 0.05)",
-              border: `1px solid ${isOnline ? "rgba(0, 242, 255, 0.3)" : "rgba(255, 0, 85, 0.3)"}`,
+              background: statusBg,
+              border: `1px solid ${statusBorder}`,
               borderRadius: 12,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              boxShadow: isOnline ? "0 0 15px rgba(0, 242, 255, 0.1)" : "none"
+              boxShadow: isOnline ? "0 0 15px rgba(0, 242, 255, 0.1)" : "0 0 15px rgba(255, 0, 85, 0.1)"
             }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <rect x="2" y="3" width="20" height="14" rx="2" stroke={isOnline?"#00f2ff":"#ff0055"} strokeWidth="1.5"/>
-                <path d="M8 21h8M12 17v4" stroke={isOnline?"#00f2ff":"#ff0055"} strokeWidth="1.5" strokeLinecap="round"/>
+                <rect x="2" y="3" width="20" height="14" rx="2" stroke={statusColor} strokeWidth="1.5"/>
+                <path d="M8 21h8M12 17v4" stroke={statusColor} strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
             </div>
             <span style={{
@@ -139,9 +142,9 @@ function HostCard({ host, data, deviceMap }) {
               width: 10,
               height: 10,
               borderRadius: "50%",
-              background: isOnline ? "#00f2ff" : "#ff0055",
+              background: statusColor,
               border: "2px solid #0f0f18",
-              boxShadow: isOnline ? "0 0 10px #00f2ff" : "0 0 10px #ff0055"
+              boxShadow: `0 0 10px ${statusColor}`
             }}/>
           </div>
           <div style={{minWidth:0, flex: 1}}>

@@ -373,13 +373,13 @@ def check_ping_devices(cur, conn):
 
 def check_offline_devices(cur, conn):
     # 1. DETECÇÃO DE QUEDA POR TIMEOUT (Para Auto Registro / Push / Agent)
-    # Selecionar dispositivos que deveriam estar offline mas ainda constam como online
+    # Selecionar dispositivos que deveriam estar offline usando comparação de segundos absoluta
     cur.execute(f"""
         SELECT id, name, client_id, device_type, mac_address, serial_number 
         FROM devices 
         WHERE last_seen IS NOT NULL 
           AND status != 'offline'
-          AND (NOW() AT TIME ZONE 'UTC' - last_seen AT TIME ZONE 'UTC') > INTERVAL '{OFFLINE_TIMEOUT} seconds'
+          AND EXTRACT(EPOCH FROM (NOW() - last_seen)) > {OFFLINE_TIMEOUT}
     """)
     dropped = cur.fetchall()
     
@@ -429,7 +429,7 @@ def check_offline_devices(cur, conn):
         SET status = 'online'
         WHERE status = 'offline'
           AND last_seen IS NOT NULL
-          AND (NOW() AT TIME ZONE 'UTC' - last_seen AT TIME ZONE 'UTC') < INTERVAL '{OFFLINE_TIMEOUT} seconds'
+          AND EXTRACT(EPOCH FROM (NOW() - last_seen)) < {OFFLINE_TIMEOUT}
         RETURNING id, name, client_id, device_type, mac_address, serial_number;
     """)
     recovered = cur.fetchall()
