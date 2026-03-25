@@ -349,15 +349,16 @@ app.post("/push", metricsLimiter, async (req, res) => {
   try {
     const dr = await pool.query("SELECT id, client_id, name FROM devices WHERE token=$1", [token]);
     if (dr.rows.length === 0) {
-      console.log(`[Push] Token inválido recebido: ${token}`);
+      // Log para debug se o token estiver vindo em um campo estranho
+      console.log(`[Push] Token não encontrado no DB. Body completo:`, JSON.stringify(req.body));
       return res.status(401).json({ error: "Invalid token" });
     }
     const dev = dr.rows[0];
 
-    console.log(`[Push] Sinal recebido do dispositivo: ${dev.name} (${token.substring(0,8)}...)`);
+    console.log(`[Push] SINAL DE VIDA RECEBIDO: ${dev.name} via HTTP Push`);
 
     // 1. Atualizar Status e Telemetria de Hardware
-    // Se recebemos um sinal, o dispositivo está ONLINE
+    // Se chegou qualquer coisa no /push com token válido, o dispositivo está VIVO
     await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", ["online", dev.id]);
     
     // Grava métricas de performance se enviadas
