@@ -464,8 +464,10 @@ function AuthPage({ onLogin }) {
         border: "1px solid rgba(56, 189, 248, 0.3)",
         boxShadow: "0 0 50px rgba(0, 0, 0, 0.5), 0 0 20px rgba(56, 189, 248, 0.1)"
       }}>
-        <div style={{ fontSize: 42, marginBottom: 16, filter: "drop-shadow(0 0 10px rgba(56, 189, 248, 0.5))" }}>📡</div>
-        <div style={{ ...S.logoTitle, fontSize: 28, marginBottom: 4 }}>NexusWatch Pro</div>
+        <div style={{ fontSize: 42, marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+          <FuturisticLogo />
+        </div>
+        <div style={{ ...S.logoTitle, fontSize: 28, marginBottom: 4 }}>NexusWatch</div>
         <div style={{ ...S.logoSub, fontSize: 12, marginBottom: 32 }}>INFRASTRUCTURE MONITORING</div>
         
         {step ? (
@@ -1799,6 +1801,33 @@ function SolarPage({ userRole }) {
   );
 }
 
+const FuturisticLogo = () => (
+  <svg width="42" height="42" viewBox="0 0 100 100" style={{ marginRight: 12, filter: "drop-shadow(0 0 8px rgba(56, 189, 248, 0.6))" }}>
+    <defs>
+      <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#0ea5e9" />
+        <stop offset="100%" stopColor="#6366f1" />
+      </linearGradient>
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" fill="none" stroke="url(#logoGrad)" strokeWidth="3" strokeDasharray="20 10" />
+    <path d="M50 30 L70 40 L70 60 L50 70 L30 60 L30 40 Z" fill="url(#logoGrad)" opacity="0.9">
+      <animate attributeName="opacity" values="0.6;1;0.6" dur="3s" repeatCount="indefinite" />
+    </path>
+    <circle cx="50" cy="50" r="5" fill="#fff" filter="url(#glow)">
+      <animate attributeName="r" values="4;6;4" dur="2s" repeatCount="indefinite" />
+    </circle>
+    <line x1="50" y1="5" x2="50" y2="25" stroke="url(#logoGrad)" strokeWidth="2" />
+    <line x1="10" y1="25" x2="25" y2="35" stroke="url(#logoGrad)" strokeWidth="2" />
+    <line x1="90" y1="25" x2="75" y2="35" stroke="url(#logoGrad)" strokeWidth="2" />
+  </svg>
+);
+
 export default function App() {
   const isMobile = useIsMobile();
   const [authed, setAuthed] = useState(!!getToken());
@@ -1908,8 +1937,10 @@ export default function App() {
 
       <div style={sidebarStyle}>
         <div style={S.logo}>
-          <div style={{ fontSize: 22, marginBottom: 4 }}>📡</div>
-          <div style={S.logoTitle}>NexusWatch Pro</div>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+            <FuturisticLogo />
+            <div style={S.logoTitle}>NexusWatch</div>
+          </div>
           <div style={{...S.logoSub, color: "#38bdf8", fontWeight: "bold"}}>🚀 v1.0.3 (CACHE FIXED)</div>
           <div style={S.logoSub}>{isSuperAdmin ? "⚡ Superadmin" : "👤 Cliente"}</div>
         </div>
