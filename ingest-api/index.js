@@ -19,6 +19,7 @@ app.use((req, res, next) => {
 
 // ── Security & Middleware ────────────────────────────────────
 app.use(express.json({ limit: "100kb" }));
+app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 app.use(cors({ origin: "*", credentials: true }));
 
 const loginLimiter = rateLimit({
@@ -334,20 +335,38 @@ app.get("/alerts", auth, async (req, res) => {
 
 // ── PUSH UNIVERSAL (Recepcionista Cloud) ─────────────────────
 app.post("/push", metricsLimiter, async (req, res) => {
-  // Tenta pegar o token de várias formas (Header, Body ou Query) para garantir compatibilidade com DVRs
-  const token = req.headers["x-device-token"] || req.body.token || req.query.token || req.body.ID;
+  // Tenta pegar o token de várias formas (Header, Body ou Query)
+  // Aceita: x-device-token, token, ID (comum em DVRs), SN, SerialNumber, MAC
+  const token = req.headers["x-device-token"] || 
+                req.body.token || 
+                req.query.token || 
+                req.body.ID || 
+                req.body.SN || 
+                req.body.SerialNumber || 
+                req.body.MAC ||
+                req.query.id;
+
   const { 
     status, cpu, memory, disk, latency, 
-    event_type, channel, description, severity 
+    event_type, channel, description, severity,
+    type // Alguns enviam 'type' em vez de 'event_type'
   } = req.body;
 
+  const finalEventType = event_type || type;
+
   if (!token) {
-    console.log("[Push] Requisição sem Token recebida:", req.body);
-    return res.status(401).json({ error: "Token required" });
+    console.log("[Push] Requisição sem identificador recebida:", JSON.stringify(req.body));
+    return res.status(401).json({ error: "Identification (Token/SN/MAC) required" });
   }
 
   try {
-    const dr = await pool.query("SELECT id, client_id, name FROM devices WHERE token=$1", [token]);
+    // Busca por Token ou MAC ou SN para facilitar a vida do usuário
+    const dr = await pool.query(`
+      SELECT id, client_id, name 
+      FROM devices 
+      WHERE token=$1 OR mac_address=$1 OR serial_number=$1
+      LIMIT 1
+    `, [token]);
     if (dr.rows.length === 0) {
       // Log para debug se o token estiver vindo em um campo estranho
       console.log(`[Push] Token não encontrado no DB. Body completo:`, JSON.stringify(req.body));
@@ -370,13 +389,13 @@ app.post("/push", metricsLimiter, async (req, res) => {
     }
 
     // 2. Registrar Eventos de Analíticos (Movimento, Pessoas, etc.)
-    if (event_type) {
+    if (finalEventType) {
       await pool.query(`
         INSERT INTO events (device_id, event_type, channel, description, severity)
         VALUES ($1, $2, $3, $4, $5)
-      `, [dev.id, event_type, channel || 0, description || "", severity || "info"]);
+      `, [dev.id, finalEventType, channel || 0, description || "", severity || "info"]);
       
-      console.log(`[Push] Evento recebido: ${event_type} no canal ${channel} do dispositivo ${dev.name}`);
+      console.log(`[Push] Evento recebido: ${finalEventType} no canal ${channel} do dispositivo ${dev.name}`);
 
       // ── Disparar Alertas (Telegram / WhatsApp) ──
       const devDetails = await pool.query("SELECT mac_address, serial_number, device_type FROM devices WHERE id=$1", [dev.id]);
@@ -384,7 +403,7 @@ app.post("/push", metricsLimiter, async (req, res) => {
 
       let msg = `🎬 *Alerta NexusWatch*\n\n`;
       msg += `❌ ${dev.name}\n`;
-      msg += `Problema: Evento detectado: ${event_type.replace(/_/g, " ")}\n\n`;
+      msg += `Problema: Evento detectado: ${finalEventType.replace(/_/g, " ")}\n\n`;
       msg += `Host: ${dev.name}\n`;
       msg += `Data do Evento: ${new Date().toLocaleString("pt-BR")}\n`;
       msg += `Detalhes do Equipamento: ${device_type || 'other'} - ${mac_address || 'N/A'} - ${serial_number || 'N/A'}\n`;
@@ -419,13 +438,13 @@ app.post("/push", metricsLimiter, async (req, res) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: event_type ? "EVENT" : "METRIC",
+          type: finalEventType ? "EVENT" : "METRIC",
           device_id: dev.id,
           client_id: dev.client_id,
           name: dev.name,
           status: status || "online",
           cpu, memory, disk, latency,
-          event: event_type ? { type: event_type, channel, description, severity } : null,
+          event: finalEventType ? { type: finalEventType, channel, description, severity } : null,
           time: new Date().toISOString()
         }),
       }).catch(() => {});
