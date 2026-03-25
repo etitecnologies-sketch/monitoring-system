@@ -12,41 +12,23 @@ function useIsMobile() {
 }
 
 const getInitialAPI = () => {
-  try {
-    const fallback = new URLSearchParams(window.location.search).get("fallback_api");
-    if (fallback) return atob(fallback);
-  } catch (e) {
-    console.error("Erro ao decodificar fallback_api:", e);
+  const envApi = import.meta.env.VITE_API_URL;
+  if (envApi && envApi.length > 5) return envApi;
+  
+  const h = window.location.hostname;
+  if (h === "localhost" || h === "127.0.0.1") return "http://localhost:3000";
+  
+  // Se estiver no Railway e não tiver variável, tenta trocar 'frontend' por 'ingest-api'
+  if (h.includes("railway.app") && h.includes("frontend")) {
+    return window.location.protocol + "//" + h.replace("frontend", "ingest-api");
   }
-  return import.meta.env.VITE_API_URL || "";
+  
+  return window.location.origin;
 };
 
-const rawApiBase = getInitialAPI();
+const API = getInitialAPI().replace(/["']/g, "").trim().replace(/\/$/, "");
 
-// ── DETECÇÃO AGRESSIVA DA API ──
-let API = rawApiBase.replace(/["']/g, "").trim();
-
-if (!API || API === "/" || API.length < 5) {
-  const h = window.location.hostname;
-  if (h === "localhost" || h === "127.0.0.1") {
-    API = "http://localhost:3000";
-  } else if (h.includes("railway.app")) {
-    // Se estamos no Railway, a API geralmente segue o padrão de nome do projeto
-    // Vamos tentar reconstruir o domínio da API baseado no domínio do frontend
-    const parts = h.split("-");
-    // Remove o sufixo '-production' ou o hash final se existir e tenta trocar 'frontend' por 'ingest-api'
-    API = `https://${h.replace("frontend", "ingest-api")}`;
-    // Fallback: Se não houver 'frontend' no nome, usa o origin atual (mesmo domínio)
-    if (!h.includes("frontend")) API = window.location.origin;
-  } else {
-    API = window.location.origin;
-  }
-}
-
-if (API && !API.startsWith("http")) API = `https://${API}`;
-if (API.endsWith("/")) API = API.slice(0, -1);
-
-console.log("🚀 NEXUSWATCH API TARGET:", API);
+console.log("🚀 API URL:", API);
 
 const getToken = () => localStorage.getItem("token");
 const setToken = (t) => localStorage.setItem("token", t);
@@ -350,54 +332,64 @@ function AuthPage({ onLogin }) {
   const [step, setStep] = useState(null);
   const [form, setForm] = useState({ username: "", password: "" });
   const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
+  const [showApiInput, setShowApiInput] = useState(false);
+  const [showDiag, setShowDiag] = useState(false);
+  const [tempApi, setTempApi] = useState(API);
+  const [diagStatus, setDiagStatus] = useState("");
+
+  const getDiagInfo = () => ({
+    "API Atual": API,
+    "VITE_API_URL": import.meta.env.VITE_API_URL || "Não definida",
+    "Ambiente": import.meta.env.MODE,
+    "Hostname": window.location.hostname,
+    "Status Local": diagStatus || "Aguardando teste..."
+  });
+
+  const testConnection = async () => {
+    setDiagStatus("⏳ Testando...");
+    try {
+      const start = Date.now();
+      const res = await fetch(`${API}/auth/status`, { mode: 'cors' });
+      const end = Date.now();
+      if (res.ok) {
+        setDiagStatus(`✅ OK (${end - start}ms)`);
+      } else {
+        setDiagStatus(`❌ Erro HTTP: ${res.status}`);
+      }
+    } catch (e) {
+      setDiagStatus(`❌ Falha na rede: ${e.message}`);
+    }
+  };
+
+  const updateApi = () => {
+    if (tempApi && tempApi.length > 5) {
+      localStorage.setItem("NEXUS_API_URL", tempApi);
+      window.location.reload();
+    }
+  };
 
   useEffect(() => {
     const checkStatus = async () => {
       console.log(`[App] Verificando status da API em: ${API}/auth/status`);
       
-      // Timer de diagnóstico: se demorar mais de 3s, mostra aviso visual
-      const diagTimer = setTimeout(() => {
-        if (step === null) {
-          setErr(
-            <span>
-              🕒 A API está demorando para responder... <br/>
-              Link atual: <strong style={{color:'#38bdf8'}}>{API}</strong> <br/>
-              <button onClick={() => window.location.reload()} style={{marginTop:10, padding:'5px 10px', borderRadius:5, border:'none', background:'#38bdf8', color:'#000', cursor:'pointer'}}>
-                Recarregar Página
-              </button>
-            </span>
-          );
-        }
-      }, 3000);
-
       try {
-        const d = await api("/auth/status");
-        clearTimeout(diagTimer);
-        console.log("[App] API Status: OK", d);
-        setStep(d.setupDone ? "login" : "setup");
-        setErr(""); // Limpa erro se conectar
-      } catch (e) {
-        clearTimeout(diagTimer);
-        console.error("[App] API Connection Error:", e);
-        
-        // Se a API falhou e estamos no Railway, tenta um FALLBACK imediato para o domínio atual
-        if (window.location.hostname.includes("railway.app") && !API.includes(window.location.hostname)) {
-           console.log("[App] Tentando Fallback para o domínio atual...");
-           const fallbackAPI = window.location.origin.replace("frontend", "ingest-api");
-           window.location.href = `${window.location.origin}?fallback_api=${btoa(fallbackAPI)}`;
-           return;
-        }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-        const errorMsg = e.message || (typeof e === 'string' ? e : "Erro de conexão");
-        setErr(
-          <span>
-            ❌ Erro ao conectar na API <br/>
-            <a href={`${API}/auth/status`} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
-              Testar link da API: {API}
-            </a>
-            <div style={{ fontSize: '10px', marginTop: '5px', opacity: 0.7 }}>{errorMsg}</div>
-          </span>
-        );
+        const res = await fetch(`${API}/auth/status`, { 
+          signal: controller.signal,
+          headers: { "Accept": "application/json" }
+        });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+        
+        const d = await res.json();
+        setStep(d.setupDone ? "login" : "setup");
+        setErr(""); 
+      } catch (e) {
+        console.error("[App] API Connection Error:", e);
+        setErr(`Erro ao conectar na API: ${e.message}. Verifique se o link ${API} está correto.`);
         setStep("login");
       }
     };
