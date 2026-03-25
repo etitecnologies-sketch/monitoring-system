@@ -344,10 +344,11 @@ app.get("/alerts", auth, async (req, res) => {
 
 // ── PUSH UNIVERSAL (Recepcionista Cloud) ─────────────────────
 app.post("/push", metricsLimiter, async (req, res) => {
+  const start = Date.now();
   // Tenta pegar o token de várias formas (Header, Body, XML, ou Query)
-  // Intelbras/Hikvision enviam XML em tags como <macAddress>, <serialNumber>
   const body = req.body || {};
-  const xmlData = body.eventnotificationalert || body.event || {}; // Se o middleware xml-bodyparser funcionou
+  const xmlData = body.eventnotificationalert || body.event || {};
+  const latency = Date.now() - start;
 
   const token = req.headers["x-device-token"] || 
                 body.token || 
@@ -356,15 +357,18 @@ app.post("/push", metricsLimiter, async (req, res) => {
                 body.SN || 
                 body.SerialNumber || 
                 body.MAC ||
-                xmlData.macaddress || // XML Intelbras/Hikvision
+                xmlData.macaddress || 
                 xmlData.serialnumber ||
                 req.query.id;
 
   const { 
-    status, cpu, memory, disk, latency, 
+    status, cpu, memory, disk, 
     event_type, channel, description, severity,
-    type // Alguns enviam 'type' em vez de 'event_type'
+    type 
   } = body;
+  
+  // Usa a latência enviada pela câmera ou calcula a do processamento
+  const finalLatency = body.latency || latency;
 
   // Extração de eventos do XML (Intelbras/Hikvision)
   let finalEventType = event_type || type || xmlData.eventtype || xmlData.event;
@@ -424,6 +428,12 @@ app.post("/push", metricsLimiter, async (req, res) => {
     // 1. Atualizar Status
     await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", ["online", dev.id]);
     
+    // Grava métrica de latência
+    await pool.query(`
+      INSERT INTO metrics (time, host, device_id, latency_ms, status)
+      VALUES (NOW(), $1, $2, $3, $4)
+    `, [dev.name, dev.id, finalLatency, "online"]);
+
     // 2. Registrar Eventos
     if (finalEventType) {
       await pool.query(`
@@ -480,14 +490,16 @@ app.post("/push", metricsLimiter, async (req, res) => {
 
     // 3. WebSocket (Realtime)
     if (WEBSOCKET_URL) {
-      fetch(`${WEBSOCKET_URL}/publish`, {
+      fetch(`${WEBSOCKET_URL.replace(/\/$/, "")}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: finalEventType ? "EVENT" : "METRIC",
           device_id: dev.id,
+          client_id: dev.client_id,
           name: dev.name,
           status: "online",
+          latency_ms: finalLatency,
           event: finalEventType ? { type: finalEventType, channel: finalChannel, description: finalDescription } : null,
           time: new Date().toISOString()
         }),
@@ -622,16 +634,18 @@ const tcpServer = net.createServer((socket) => {
   console.log(`[TCP] Nova conexão de: ${remoteAddr}`);
 
   socket.on("data", async (data) => {
+    const start = Date.now();
     try {
       // Converte o buffer em string para procurar o Serial Number ou MAC
       const rawData = data.toString("utf8");
       const hexData = data.toString("hex").toUpperCase();
+      const latency = Date.now() - start;
       
       console.log(`[TCP] Dados recebidos de ${remoteAddr}: ${rawData.substring(0, 50)}...`);
 
       // Busca no banco por qualquer dispositivo que tenha o SN ou MAC presente nos dados binários
       // O protocolo da Intelbras envia o SN em texto plano em algum momento
-      const devicesRes = await pool.query("SELECT id, name, serial_number, mac_address FROM devices");
+      const devicesRes = await pool.query("SELECT id, name, serial_number, mac_address, client_id FROM devices");
       
       for (const dev of devicesRes.rows) {
         const cleanMac = dev.mac_address ? dev.mac_address.replace(/[:-]/g, "").toUpperCase() : null;
@@ -644,16 +658,25 @@ const tcpServer = net.createServer((socket) => {
           // Atualiza status para online
           await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", ["online", dev.id]);
           
+          // Grava métrica de latência
+          await pool.query(`
+            INSERT INTO metrics (time, host, device_id, latency_ms, status)
+            VALUES (NOW(), $1, $2, $3, $4)
+          `, [dev.name, dev.id, latency, "online"]);
+
           // Notifica WebSocket
-          if (process.env.WEBSOCKET_URL) {
-            fetch(`${process.env.WEBSOCKET_URL}/publish`, {
+          const WEBSOCKET_URL = process.env.WEBSOCKET_URL;
+          if (WEBSOCKET_URL) {
+            fetch(`${WEBSOCKET_URL.replace(/\/$/, "")}/publish`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 type: "METRIC",
                 device_id: dev.id,
+                client_id: dev.client_id,
                 name: dev.name,
                 status: "online",
+                latency_ms: latency,
                 time: new Date().toISOString()
               }),
             }).catch(() => {});
