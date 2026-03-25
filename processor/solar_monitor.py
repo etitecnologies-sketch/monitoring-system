@@ -381,64 +381,77 @@ def collect_goodwe(inv):
 
 # ── HUAWEI (FusionSolar) ──────────────────────────────────────
 def collect_huawei(inv):
-    """Coleta dados Huawei via FusionSolar — suporte a redirecionamento regional e limpeza de ID"""
+    """Coleta dados Huawei via FusionSolar — suporte a API Northbound e Web-Scraping Fallback"""
     try:
         user = inv.get("huawei_user", "")
         pwd  = inv.get("huawei_pass", "")
         station_id = str(inv.get("huawei_station_id", "")).replace("NE=", "").strip()
         
-        if not user or not pwd or not station_id: return None
+        if not user or not pwd or not station_id: 
+            logger.error(f"Huawei [{inv['name']}]: Credenciais incompletas.")
+            return None
 
-        # Lista de servidores regionais da Huawei (tentamos o internacional primeiro)
         REGIONS = [
             "https://intl.fusionsolar.huawei.com",
             "https://la5.fusionsolar.huawei.com",
-            "https://region01eu5.fusionsolar.huawei.com",
-            "https://region02eu5.fusionsolar.huawei.com"
+            "https://region01eu5.fusionsolar.huawei.com"
         ]
 
         for BASE in REGIONS:
+            logger.info(f"Tentando Huawei em {BASE} para {inv['name']}...")
             try:
                 session = requests.Session()
                 session.headers.update({
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
+                    "Content-Type": "application/json"
                 })
 
-                # Login
-                login_payload = {"userName": user, "systemCode": pwd} # Formato da API Northbound
-                r = session.post(f"{BASE}/rest/openapi/login", json=login_payload, timeout=15)
+                # Tentativa 1: API Northbound (Mais estável se ativa)
+                login_payload = {"userName": user, "systemCode": pwd}
+                r = session.post(f"{BASE}/rest/openapi/login", json=login_payload, timeout=20)
                 
                 if r.status_code == 200:
                     token = r.json().get("data")
                     if token:
                         session.headers.update({"XSRF-TOKEN": token})
-                        
-                        # Buscar dados da usina
                         r2 = session.post(f"{BASE}/rest/openapi/pvms/v1/station/get-station-real-kpi", 
-                                         json={"stationCodes": station_id}, timeout=15)
-                        
+                                         json={"stationCodes": station_id}, timeout=20)
                         if r2.status_code == 200:
                             data_list = r2.json().get("data", [])
                             if data_list:
                                 flow = data_list[0]
-                                power_kw = float(flow.get("activePower", 0) or 0)
-                                energy_today = float(flow.get("dayPower", 0) or 0)
-                                energy_total = float(flow.get("totalPower", 0) or 0)
-                                
-                                status = "generating" if power_kw > 0 else ("idle" if is_daytime() else "offline")
-                                logger.info(f"Huawei OK ({BASE}) [{inv['name']}]: {power_kw*1000:.0f}W")
                                 return {
-                                    "power_w": power_kw * 1000,
-                                    "energy_today_kwh": energy_today,
-                                    "energy_total_kwh": energy_total,
-                                    "status": status
+                                    "power_w": float(flow.get("activePower", 0) or 0) * 1000,
+                                    "energy_today_kwh": float(flow.get("dayPower", 0) or 0),
+                                    "energy_total_kwh": float(flow.get("totalPower", 0) or 0),
+                                    "status": "generating" if float(flow.get("activePower", 0) or 0) > 0 else "idle"
                                 }
+
+                # Tentativa 2: Web Login (Fallback se Northbound não estiver ativa)
+                logger.info(f"API Northbound falhou, tentando Web Login para {inv['name']}...")
+                login_web = {
+                    "username": user, "password": pwd,
+                    "clientObject": {"clientType": "WEB", "lang": "pt_BR"}
+                }
+                r_web = session.post(f"{BASE}/rest/neteco/web/sequence/v2/user/login", json=login_web, timeout=20)
+                
+                # Se logou no web, tenta pegar o resumo da usina
+                if r_web.status_code == 200:
+                    r_data = session.post(f"{BASE}/rest/pvms/web/station/v1/overview/base-kpi", 
+                                         json={"stationDn": station_id}, timeout=20)
+                    if r_data.status_code == 200:
+                        d = r_data.json().get("data", {}) or {}
+                        return {
+                            "power_w": float(d.get("realTimePower", 0) or 0) * 1000,
+                            "energy_today_kwh": float(d.get("dailyEnergy", 0) or 0),
+                            "energy_total_kwh": float(d.get("cumulativeEnergy", 0) or 0),
+                            "status": "generating" if float(d.get("realTimePower", 0) or 0) > 0 else "idle"
+                        }
             except Exception as e:
-                logger.debug(f"Huawei Region {BASE} failed: {e}")
+                logger.error(f"Falha na região {BASE}: {str(e)}")
                 continue
         
+        logger.error(f"Huawei [{inv['name']}]: Todas as tentativas de login falharam.")
         return None
     except Exception as e:
         logger.error(f"Huawei major error [{inv['name']}]: {e}")
@@ -639,8 +652,12 @@ def main():
     logger.info(f"{'='*52}")
 
     while True:
-        try: run_solar_monitor()
-        except Exception as e: logger.exception(f"Solar error: {e}")
+        try: 
+            logger.info("--- CICLO DE COLETA SOLAR INICIADO ---")
+            run_solar_monitor()
+            logger.info("--- CICLO DE COLETA SOLAR FINALIZADO ---")
+        except Exception as e: 
+            logger.exception(f"Solar error: {e}")
         time.sleep(SOLAR_INTERVAL)
 
 if __name__ == "__main__": main()
