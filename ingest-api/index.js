@@ -786,18 +786,16 @@ const tcpServer = net.createServer((socket) => {
   console.log(`[TCP] Nova conexão de: ${remoteAddr}`);
 
   socket.on("data", async (data) => {
-    const start = Date.now();
     try {
       // Converte o buffer em string para procurar o Serial Number ou MAC
       const rawData = data.toString("utf8");
       const hexData = data.toString("hex").toUpperCase();
-      const latency = Date.now() - start;
       
       console.log(`[TCP] Dados recebidos de ${remoteAddr}: ${rawData.substring(0, 50)}...`);
 
       // Busca no banco por qualquer dispositivo que tenha o SN ou MAC presente nos dados binários
       // O protocolo da Intelbras envia o SN em texto plano em algum momento
-      const devicesRes = await pool.query("SELECT id, name, serial_number, mac_address, client_id FROM devices");
+      const devicesRes = await pool.query("SELECT id, name, serial_number, mac_address, client_id, status FROM devices");
       
       for (const dev of devicesRes.rows) {
         const cleanMac = dev.mac_address ? dev.mac_address.replace(/[:-]/g, "").toUpperCase() : null;
@@ -805,39 +803,19 @@ const tcpServer = net.createServer((socket) => {
         if ((dev.serial_number && rawData.includes(dev.serial_number)) || 
             (cleanMac && hexData.includes(cleanMac))) {
           
-          console.log(`[TCP] Dispositivo Identificado: ${dev.name} (${dev.serial_number || dev.mac_address})`);
+          console.log(`[TCP] SINAL DE VIDA: ${dev.name} (${dev.serial_number || dev.mac_address})`);
           
-          // --- LOGICA FORA DA CAIXA: ALERTA DE RETORNO PELA API ---
-          if (dev.status === 'offline') {
-            console.log(`[API] ⚡ DISPARANDO RETORNO IMEDIATO: ${dev.name}`);
-            const tgMsg = `✅ <b>${dev.name}</b>\n<b>CONEXÃO RECUPERADA</b>\nData: ${new Date().toLocaleString("pt-BR")}`;
-            
-            // Envia Telegram (Usando os tokens do cliente se existirem)
-            const clientRes = await pool.query("SELECT telegram_token, telegram_chat_id FROM clients WHERE id=$1", [dev.client_id]);
-            const cData = clientRes.rows[0];
-            const tok = cData?.telegram_token || process.env.TG_TOKEN;
-            const cid = cData?.telegram_chat_id || process.env.TG_CHAT_ID;
-            
-            if (tok && cid) {
-              fetch(`https://api.telegram.org/bot${tok}/sendMessage`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ chat_id: cid, text: tgMsg, parse_mode: "HTML" })
-              }).catch(e => console.error("Erro retorno API:", e.message));
-            }
-          }
-
-          // Atualiza sinal de vida e força status online
+          // Atualiza sinal de vida e status online
+          // O Processor Python cuidará do envio do alerta de online ao detectar a mudança de status no banco
           await pool.query("UPDATE devices SET last_seen=NOW(), status='online' WHERE id=$1", [dev.id]);
           
-          // Grava métrica de latência
+          // Grava métrica de sinal de vida (latência fictícia baixa para TCP direto)
           await pool.query(`
             INSERT INTO metrics (time, host, device_id, latency_ms, status)
             VALUES (NOW(), $1, $2, $3, 'online')
-          `, [dev.name, dev.id, latency]);
+          `, [dev.name, dev.id, 1]);
 
-          // Notifica WebSocket
-          const WEBSOCKET_URL = process.env.WEBSOCKET_URL;
+          // Notifica WebSocket (Dashboard real-time)
           if (WEBSOCKET_URL) {
             fetch(`${WEBSOCKET_URL.replace(/\/$/, "")}/publish`, {
               method: "POST",
@@ -848,7 +826,7 @@ const tcpServer = net.createServer((socket) => {
                 client_id: dev.client_id,
                 name: dev.name,
                 status: "online",
-                latency_ms: latency,
+                latency_ms: 1,
                 time: new Date().toISOString()
               }),
             }).catch(() => {});
@@ -872,43 +850,8 @@ tcpServer.listen(TCP_PORT, "0.0.0.0", () => {
   console.log(`=========================================`);
 });
 
-// --- MONITORAMENTO FORA DA CAIXA (DETECÇÃO DE QUEDA) ---
-// Se o Processor (Python) não estiver rodando, este loop garante que os alertas subam.
-setInterval(async () => {
-  try {
-    const dropped = await pool.query(`
-      UPDATE devices 
-      SET status = 'offline'
-      WHERE last_seen IS NOT NULL 
-        AND status != 'offline'
-        AND (NOW() - last_seen) > INTERVAL '15 seconds'
-      RETURNING id, name, client_id
-    `);
-
-    for (const dev of dropped.rows) {
-      console.log(`[MONITOR API] 🚨 Queda detectada: ${dev.name}`);
-      const tgMsg = `❌ <b>${dev.name}</b>\n<b>DISPOSITIVO OFFLINE</b>\nData: ${new Date().toLocaleString("pt-BR")}`;
-      
-      const clientRes = await pool.query("SELECT telegram_token, telegram_chat_id FROM clients WHERE id=$1", [dev.client_id]);
-      const cData = clientRes.rows[0];
-      const tok = cData?.telegram_token || process.env.TG_TOKEN;
-      const cid = cData?.telegram_chat_id || process.env.TG_CHAT_ID;
-
-      if (tok && cid) {
-        fetch(`https://api.telegram.org/bot${tok}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: cid, text: tgMsg, parse_mode: "HTML" })
-        }).catch(e => console.error("Erro queda API:", e.message));
-      }
-      
-      // Grava métrica de queda para o dashboard
-      await pool.query("INSERT INTO metrics (time, host, device_id, latency_ms, status) VALUES (NOW(), $1, $2, 0, 'offline')", [dev.name, dev.id]);
-    }
-  } catch (err) {
-    // console.error("[MONITOR API] Erro:", err.message);
-  }
-}, 5000);
+// O MONITORAMENTO DE QUEDA E RETORNO FOI CENTRALIZADO NO PROCESSOR (PYTHON)
+// PARA EVITAR DUPLICIDADE DE ALERTAS E GARANTIR FORMATAÇÃO PADRONIZADA.
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`=========================================`);

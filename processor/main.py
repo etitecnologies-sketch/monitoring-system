@@ -286,6 +286,9 @@ def check_ping_devices(cur, conn):
             alive, latency = ping(ip, PING_TIMEOUT)
             method = "PING"
 
+        # 4. Caso seja monitorado apenas por sinal de vida (Auto Registro / Push)
+        # Não tentamos 'alive' aqui, deixamos para o check_offline_devices
+        
         return dev_id,dev_name,ip or ddns,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method,mac,sn,last_latency
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
@@ -297,7 +300,6 @@ def check_ping_devices(cur, conn):
         d_icon=device_icon(dtype)
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
-        mac_sn_str = f"MAC: {escape_html(mac)} | SN: {escape_html(sn)}\n" if mac or sn else ""
         
         # Estado atual do banco
         was_down = (db_status == 'offline')
@@ -305,11 +307,14 @@ def check_ping_devices(cur, conn):
         # Buscar config do cliente
         tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
 
+        # Se o monitoramento ativo (Ping/TCP) detectou que está vivo
         if alive:
             try:
                 cur.execute("UPDATE devices SET last_seen=NOW(),status='online' WHERE id=%s",(dev_id,))
                 conn.commit()
             except: conn.rollback()
+            
+            # Registrar métrica de latência
             if latency>0:
                 try:
                     hl=hostname or target or dev_name
@@ -321,82 +326,118 @@ def check_ping_devices(cur, conn):
                     conn.commit()
                 except Exception as e: logger.debug(f"Ping metric: {e}"); conn.rollback()
 
-        if alive and was_down:
-            ping_state[dev_id]=False
-            logger.info(f"✅ DEVICE ONLINE: {dev_name} ({target}) via {method}")
-            edev_name = escape_html(dev_name)
-            etarget = escape_html(target)
-            ecl_name = escape_html(cl_name) if cl_name else ""
-            msg=(f"✅ <b>{edev_name}</b>\n"
-                 f"Normalizado: Host <b>{etarget}</b> está respondendo via {method}\n\n"
-                 f"Host: {edev_name}\n"
-                 f"Latência Atual: <b>{latency:.1f}ms</b>\n"
-                 f"Data da Normalização: <b>{now_display()}</b>\n"
-                 f"Detalhes: {d_icon} {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n"
-                 +(f"Descrição: {ecl_name}\n" if cl_name else "")
-                 +(f"Tags: {escape_html(tags_str)}\n" if tags_str else ""))
-            send_telegram(msg, tg_tok, tg_cid)
-            send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
-            send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
-                f"Device '{dev_name}' voltou ONLINE.\nAlvo: {target}\nMétodo: {method}\nLatência: {latency:.1f}ms\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_display()}", cl_email)
+            # Alerta de retorno ONLINE (para dispositivos com monitoramento ativo)
+            if was_down:
+                logger.info(f"✅ DEVICE ONLINE (Active): {dev_name} ({target}) via {method}")
+                edev_name = escape_html(dev_name)
+                etarget = escape_html(target)
+                ecl_name = escape_html(cl_name) if cl_name else ""
+                msg=(f"✅ <b>{edev_name}</b>\n"
+                     f"<b>CONEXÃO RESTABELECIDA</b>\n"
+                     f"Status: O dispositivo voltou a responder via {method}\n\n"
+                     f"Latência: <b>{latency:.1f}ms</b>\n"
+                     f"Data/Hora: <b>{now_display()}</b>\n"
+                     f"Detalhes: {d_icon} {escape_html(dtype or 'other')}\n"
+                     +(f"MAC: {escape_html(mac)}\n" if mac else "")
+                     +(f"SN: {escape_html(sn)}\n" if sn else "")
+                     +(f"Cliente: {ecl_name}\n" if cl_name else ""))
+                
+                send_telegram(msg, tg_tok, tg_cid)
+                send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
 
-        elif not alive and not was_down:
-            ping_state[dev_id]=True
-            logger.warning(f"🚨 DEVICE OFFLINE: {dev_name} ({target})")
+        # Se o monitoramento ativo detectou queda (e não é apenas via Push)
+        elif not alive and not was_down and method != "NONE":
+            logger.warning(f"🚨 DEVICE OFFLINE (Active): {dev_name} ({target})")
             try:
                 cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'offline',1,0,'offline',%s)",(dev_id,target or dev_name,client_id))
                 cur.execute("UPDATE devices SET status='offline' WHERE id=%s",(dev_id,))
                 cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,0,'offline')", (target or dev_name, dev_id))
                 conn.commit()
             except Exception as e: logger.error(f"Alert DB save error: {e}"); conn.rollback()
+            
             edev_name = escape_html(dev_name)
             etarget = escape_html(target)
             ecl_name = escape_html(cl_name) if cl_name else ""
             msg=(f"❌ <b>{edev_name}</b>\n"
-                 f"Problema: Host <b>{etarget}</b> está indisponível via {method}\n\n"
-                 f"Host: {edev_name}\n"
+                 f"<b>DISPOSITIVO OFFLINE</b>\n"
+                 f"Falha detectada via {method}\n\n"
                  f"Última Latência: <b>{last_latency if last_latency else 0:.1f}ms</b>\n"
                  f"Data do Evento: <b>{now_display()}</b>\n"
-                 f"Detalhes: {d_icon} {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n"
-                 +(f"Descrição: {ecl_name}\n" if cl_name else "")
-                 +(f"Tags: {escape_html(tags_str)}\n" if tags_str else "")
-                 +f"Indicação: Falha na conexão via {method}. Verifique o equipamento.")
+                 f"Detalhes: {d_icon} {escape_html(dtype or 'other')}\n"
+                 +(f"MAC: {escape_html(mac)}\n" if mac else "")
+                 +(f"SN: {escape_html(sn)}\n" if sn else "")
+                 +(f"Cliente: {ecl_name}\n" if cl_name else ""))
+            
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
-            send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
-                f"Device '{dev_name}' ficou OFFLINE.\nAlvo: {target}\nÚltima Latência: {last_latency if last_latency else 0:.1f}ms\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_display()}", cl_email)
 
 def check_offline_devices(cur, conn):
-    # O PROCESSOR AGORA É APENAS O "CARRASCO"
-    # Ele só tem uma missão: Marcar como OFFLINE quem sumiu há mais de 10s.
+    # 1. DETECÇÃO DE QUEDA POR TIMEOUT (Para Auto Registro / Push / Agent)
+    # Marcar como OFFLINE quem sumiu há mais de 10s.
     cur.execute("""
         UPDATE devices 
         SET status = 'offline'
         WHERE last_seen IS NOT NULL 
           AND status != 'offline'
           AND (NOW() AT TIME ZONE 'UTC' - last_seen AT TIME ZONE 'UTC') > INTERVAL '10 seconds'
-        RETURNING id, name, client_id;
+        RETURNING id, name, client_id, device_type, mac_address, serial_number;
     """)
     dropped = cur.fetchall()
     
-    for dev_id, dev_name, client_id in dropped:
-        print(f"🚨🚨🚨 CARRASCO: {dev_name} foi executado (OFFLINE)")
+    for dev_id, dev_name, client_id, dtype, mac, sn in dropped:
+        logger.warning(f"🚨 QUEDA POR TIMEOUT: {dev_name}")
         try:
-            # 1. Registra alerta
             cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id,fired_at) VALUES(%s,%s,'offline',1,0,'offline',%s,NOW())",(dev_id,dev_name,client_id))
-            # 2. Registra métrica para o Dashboard
             cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,0,'offline')", (dev_name, dev_id))
             conn.commit()
             
-            # 3. Notifica Telegram
             tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
+            d_icon = device_icon(dtype)
+            
             msg=(f"❌ <b>{escape_html(dev_name)}</b>\n"
                  f"<b>DISPOSITIVO OFFLINE</b>\n"
-                 f"O sinal foi interrompido há mais de 10 segundos.\n"
-                 f"Data: <b>{now_display()}</b>")
+                 f"O sinal foi interrompido há mais de 10 segundos.\n\n"
+                 f"Data/Hora: <b>{now_display()}</b>\n"
+                 f"Detalhes: {d_icon} {escape_html(dtype or 'other')}\n"
+                 +(f"MAC: {escape_html(mac)}\n" if mac else "")
+                 +(f"SN: {escape_html(sn)}\n" if sn else "")
+                 +(f"Cliente: {escape_html(cl_name)}\n" if cl_name else ""))
+            
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
-        except Exception as e: print(f"Erro Carrasco: {e}"); conn.rollback()
+        except Exception as e: logger.error(f"Erro Queda Timeout: {e}"); conn.rollback()
+
+    # 2. DETECÇÃO DE RETORNO POR TIMEOUT (Para quem voltou a enviar last_seen mas estava offline)
+    # Dispositivos que estão com status 'offline' mas o last_seen é menor que 10s
+    cur.execute("""
+        UPDATE devices 
+        SET status = 'online'
+        WHERE status = 'offline'
+          AND last_seen IS NOT NULL
+          AND (NOW() AT TIME ZONE 'UTC' - last_seen AT TIME ZONE 'UTC') < INTERVAL '10 seconds'
+        RETURNING id, name, client_id, device_type, mac_address, serial_number;
+    """)
+    recovered = cur.fetchall()
+
+    for dev_id, dev_name, client_id, dtype, mac, sn in recovered:
+        logger.info(f"✅ RETORNO POR SINAL: {dev_name}")
+        try:
+            tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
+            d_icon = device_icon(dtype)
+            
+            msg=(f"✅ <b>{escape_html(dev_name)}</b>\n"
+                 f"<b>CONEXÃO RECUPERADA</b>\n"
+                 f"O sistema voltou a receber sinal do dispositivo.\n\n"
+                 f"Data/Hora: <b>{now_display()}</b>\n"
+                 f"Detalhes: {d_icon} {escape_html(dtype or 'other')}\n"
+                 +(f"MAC: {escape_html(mac)}\n" if mac else "")
+                 +(f"SN: {escape_html(sn)}\n" if sn else "")
+                 +(f"Cliente: {escape_html(cl_name)}\n" if cl_name else ""))
+            
+            send_telegram(msg, tg_tok, tg_cid)
+            send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
+        except Exception as e: logger.error(f"Erro Retorno Timeout: {e}")
+
 
 def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None,client_id=None):
     if is_in_cooldown(host,expr): return
