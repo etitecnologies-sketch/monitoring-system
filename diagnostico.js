@@ -1,14 +1,13 @@
 const https = require('https');
 
-// Lista de todos os seus possíveis serviços no Railway para descobrir qual está vivo
+// URLs atualizadas com base na sua imagem do Railway
 const targets = [
     { name: "API (monitoring-system)", url: "https://monitoring-system-production-1e5a.up.railway.app/auth/status" },
-    { name: "Frontend (powerful-unity)", url: "https://powerful-unity-production-c566.up.railway.app/" },
-    { name: "Possível Frontend (courageous-charm)", url: "https://courageous-charm-production.up.railway.app/" }
+    { name: "Frontend Correto (powerful-unity)", url: "https://powerful-unity-production.up.railway.app/" }
 ];
 
 function check(target) {
-    console.log(`🔍 Testando ${target.name}...`);
+    console.log(`🔍 Testando ${target.name}: ${target.url}`);
     const start = Date.now();
     
     const req = https.get(target.url, (res) => {

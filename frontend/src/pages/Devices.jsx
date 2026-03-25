@@ -131,6 +131,12 @@ function DeviceModal({ device, onClose, onSave }) {
                 <div style={S.formGroup}><label style={S.label}>DDNS / DNS (Remoto)</label><input style={S.input} value={ddns} onChange={e=>setDdns(e.target.value)} placeholder="ex: camera.ddns-intelbras.com.br" /></div>
                 <div style={S.formGroup}><label style={S.label}>Porta de Serviço (TCP)</label><input style={S.input} type="number" value={port} onChange={e=>setPort(e.target.value)} placeholder="37777" /></div>
                 <div style={S.formGroup}><label style={S.label}>IP Local</label><input style={S.input} value={ip} onChange={e=>setIp(e.target.value)} /></div>
+                {device?.token && (
+                  <div style={S.formGroup}>
+                    <label style={S.label}>Token de Acesso (Leitura)</label>
+                    <input style={{ ...S.input, color: "#10b981", cursor: "default" }} value={device.token} readOnly />
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: "20px", marginTop: "10px" }}>
                   <label style={{ color: "#fff", fontSize: "13px", display: "flex", alignItems: "center", gap: "8px" }}>
                     <input type="checkbox" checked={ping} onChange={e=>setPing(e.target.checked)} /> Ping/ICMP
@@ -181,6 +187,10 @@ export default function Devices() {
             </div>
             
             <div style={S.deviceInfo}>
+              <div style={{ ...S.infoItem, gridColumn: "span 2", background: "rgba(16, 185, 129, 0.05)", padding: "8px", borderRadius: "8px", border: "1px dashed rgba(16, 185, 129, 0.3)" }}>
+                <span style={S.infoLabel}>ID / Token do Dispositivo</span>
+                <span style={{ ...S.infoValue, color: "#10b981", fontFamily: "'JetBrains Mono', monospace", fontSize: "11px", wordBreak: "break-all" }}>{dev.token}</span>
+              </div>
               <div style={S.infoItem}><span style={S.infoLabel}>Tipo</span><span style={S.infoValue}>{dev.device_type?.toUpperCase()}</span></div>
               <div style={S.infoItem}><span style={S.infoLabel}>MAC</span><span style={S.infoValue}>{dev.mac_address || "---"}</span></div>
               <div style={S.infoItem}><span style={S.infoLabel}>SN</span><span style={S.infoValue}>{dev.serial_number || "---"}</span></div>
