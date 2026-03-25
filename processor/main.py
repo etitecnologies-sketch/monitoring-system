@@ -350,11 +350,15 @@ def check_ping_devices(cur, conn):
 def check_offline_devices(cur, conn):
     # Monitora ABSOLUTAMENTE TODOS os dispositivos que possuem um last_seen
     # Se não envia sinal há mais de OFFLINE_TIMEOUT, está offline. Ponto final.
-    cur.execute("SELECT id, name, hostname, last_seen, status, client_id, device_type, tags, mac_address, serial_number FROM devices")
+    cur.execute("""
+        SELECT d.id, d.name, d.hostname, d.last_seen, d.status, d.client_id, d.device_type, d.tags, d.mac_address, d.serial_number,
+               (SELECT latency_ms FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_latency
+        FROM devices d
+    """)
     rows = cur.fetchall()
     
     for row in rows:
-        dev_id, dev_name, hostname, last_seen, db_status, client_id, dtype, tags, mac, sn = row
+        dev_id, dev_name, hostname, last_seen, db_status, client_id, dtype, tags, mac, sn, last_latency = row
         if last_seen is None: continue
         
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -374,7 +378,6 @@ def check_offline_devices(cur, conn):
             try:
                 cur.execute("UPDATE devices SET status=%s WHERE id=%s", (current_status, dev_id))
                 conn.commit()
-                logger.info(f"STATUS CHANGE: {dev_name} -> {current_status.upper()} (diff: {diff:.0f}s)")
                 
                 # Prepara notificações
                 edev_name = escape_html(dev_name)
@@ -384,6 +387,10 @@ def check_offline_devices(cur, conn):
                 tags_list = tags if tags else []
                 tags_str = " ".join([f"#{t}" for t in tags_list]) if tags_list else ""
                 mac_sn_str = f"Detalhes: {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n" if mac or sn else ""
+                
+                # Formata a latência para exibição
+                latency_str = f"{last_latency:.1f}ms" if last_latency is not None and last_latency > 0 else "N/A"
+                event_time = last_seen.astimezone(datetime.timezone.get_default_free_timezone() if hasattr(datetime.timezone, 'get_default_free_timezone') else None).strftime("%d/%m/%Y %H:%M:%S") if last_seen else now_str()
 
                 if current_status == "offline":
                     # Alerta de Queda
@@ -393,6 +400,7 @@ def check_offline_devices(cur, conn):
                     msg=(f"❌ <b>{edev_name}</b>\n"
                          f"Problema: Host <b>{ehostname}</b> está indisponível\n\n"
                          f"Host: {edev_name}\n"
+                         f"Latência: {latency_str}\n"
                          f"Data do Evento: {now_str()}\n"
                          f"{mac_sn_str}"
                          +(f"Descrição: {ecl_name}\n" if cl_name else "")
@@ -402,7 +410,7 @@ def check_offline_devices(cur, conn):
                     send_telegram(msg, tg_tok, tg_cid)
                     send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
                     send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
-                        f"Device '{dev_name}' parou de enviar dados.\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_str()}", cl_email)
+                        f"Device '{dev_name}' parou de enviar dados.\nLatência: {latency_str}\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_str()}", cl_email)
                 
                 else:
                     # Alerta de Retorno
@@ -410,6 +418,7 @@ def check_offline_devices(cur, conn):
                     msg=(f"✅ <b>{edev_name}</b>\n"
                          f"Normalizado: Dispositivo voltou a se comunicar\n\n"
                          f"Host: {edev_name}\n"
+                         f"Latência: {latency_str}\n"
                          f"Data da Normalização: {now_str()}\n"
                          f"{mac_sn_str}"
                          +(f"Descrição: {ecl_name}\n" if cl_name else "")
@@ -418,7 +427,7 @@ def check_offline_devices(cur, conn):
                     send_telegram(msg, tg_tok, tg_cid)
                     send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
                     send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
-                        f"Device '{dev_name}' voltou.\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_str()}", cl_email)
+                        f"Device '{dev_name}' voltou.\nLatência: {latency_str}\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_str()}", cl_email)
             except Exception as e:
                 logger.error(f"Error updating status/sending alert for {dev_name}: {e}")
                 conn.rollback()
