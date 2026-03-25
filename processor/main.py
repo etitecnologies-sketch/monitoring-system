@@ -8,14 +8,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 APP_NAME        = "NexusWatch Pro"
-DATABASE_URL    = os.environ["DATABASE_URL"]
+
+def sanitize(val): return re.sub(r'["\'`\s]', '', val) if val else ""
+
+DATABASE_URL    = sanitize(os.environ.get("DATABASE_URL", ""))
 EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "5"))
 OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "45")) # Reduzido para 45s para alerta rápido
 ALERT_COOLDOWN  = int(os.getenv("ALERT_COOLDOWN", "120"))
 PING_TIMEOUT    = int(os.getenv("PING_TIMEOUT", "3"))
 PING_COUNT      = int(os.getenv("PING_COUNT", "1"))
-
-def sanitize(val): return re.sub(r'["\'`\s]', '', val) if val else ""
 
 # Telegram/Email globais (superadmin)
 TG_TOKEN    = sanitize(os.getenv("TELEGRAM_TOKEN", ""))
@@ -31,6 +32,10 @@ WA_INSTANCE = sanitize(os.getenv("WA_INSTANCE", ""))
 WA_TOKEN    = sanitize(os.getenv("WA_TOKEN", ""))
 WA_NUMBER   = sanitize(os.getenv("WA_NUMBER", ""))
 WA_API_URL  = sanitize(os.getenv("WA_API_URL", ""))
+
+# Limpeza e log de inicialização
+print(f"DEBUG: TG_TOKEN={TG_TOKEN[:10]}... | TG_CHAT_ID={TG_CHAT_ID}")
+print(f"DEBUG: DB_URL={DATABASE_URL[:20]}...")
 
 device_online_state = {}
 alert_cooldown_map  = {}
