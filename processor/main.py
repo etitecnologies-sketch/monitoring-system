@@ -137,14 +137,15 @@ def collect_snmp(ip, community, version="2c"):
 
 def check_ping_devices(cur, conn):
     cur.execute("""SELECT id,name,ip_address,device_type,tags,status,
-        snmp_community,snmp_version,monitor_snmp,hostname,client_id,ddns_address,monitor_port
+        snmp_community,snmp_version,monitor_snmp,hostname,client_id,ddns_address,monitor_port,
+        mac_address,serial_number
         FROM devices WHERE (ip_address IS NOT NULL AND ip_address!='' AND (monitor_ping=TRUE OR monitor_port > 0))
         OR (ddns_address IS NOT NULL AND ddns_address!='' AND monitor_port > 0)""")
     devices=cur.fetchall()
     if not devices: return
 
     def check_one(dev):
-        dev_id,dev_name,ip,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,ddns,port=dev
+        dev_id,dev_name,ip,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,ddns,port,mac,sn=dev
         
         alive = False
         latency = 0
@@ -187,16 +188,17 @@ def check_ping_devices(cur, conn):
             alive, latency = ping(ip, PING_TIMEOUT)
             method = "PING"
 
-        return dev_id,dev_name,ip or ddns,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method
+        return dev_id,dev_name,ip or ddns,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method,mac,sn
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=30) as ex:
         results=list(ex.map(check_one,devices))
 
     for r in results:
-        dev_id,dev_name,target,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method=r
+        dev_id,dev_name,target,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method,mac,sn=r
         d_icon=device_icon(dtype)
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
+        mac_sn_str = f"MAC: {mac} | SN: {sn}\n" if mac or sn else ""
         was_down=ping_state.get(dev_id,False)
 
         # Buscar config do cliente
@@ -224,13 +226,14 @@ def check_ping_devices(cur, conn):
             msg=(f"✅ {dev_name}\n"
                  f"Normalizado: {target} está respondendo via {method}\n"
                  f"Host: {dev_name}\n"
+                 f"{mac_sn_str}"
                  f"Data da Normalização: {now_str()}\n"
                  f"Detalhes do Equipamento: {d_icon} {dtype or 'other'} — Latência: {latency:.0f}ms\n"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
                  +(f"Tags: {tags_str}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
-                f"Device '{dev_name}' voltou ONLINE.\nAlvo: {target}\nMétodo: {method}\nLatência: {latency:.0f}ms\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
+                f"Device '{dev_name}' voltou ONLINE.\nAlvo: {target}\nMétodo: {method}\nLatência: {latency:.0f}ms\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
 
         elif not alive and not was_down:
             ping_state[dev_id]=True
@@ -243,6 +246,7 @@ def check_ping_devices(cur, conn):
             msg=(f"❌ {dev_name}\n"
                  f"Problema: {target} está indisponível\n"
                  f"Host: {dev_name}\n"
+                 f"{mac_sn_str}"
                  f"Data do Evento: {now_str()}\n"
                  f"Detalhes do Equipamento: {d_icon} {dtype or 'other'}\n"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
@@ -250,12 +254,12 @@ def check_ping_devices(cur, conn):
                  +"Indicação: Verifique a conectividade e o redirecionamento de portas.")
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
-                f"Device '{dev_name}' ficou OFFLINE.\nAlvo: {target}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
+                f"Device '{dev_name}' ficou OFFLINE.\nAlvo: {target}\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
 
 def check_offline_devices(cur, conn):
-    cur.execute("SELECT id,name,hostname,last_seen,status,device_type,tags,client_id FROM devices WHERE monitor_agent=TRUE")
+    cur.execute("SELECT id,name,hostname,last_seen,status,device_type,tags,client_id,mac_address,serial_number FROM devices WHERE monitor_agent=TRUE")
     for row in cur.fetchall():
-        dev_id,dev_name,hostname,last_seen,status,dtype,tags,client_id=row
+        dev_id,dev_name,hostname,last_seen,status,dtype,tags,client_id,mac,sn=row
         if last_seen is None: continue
         now=datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
         is_offline=(now-last_seen).total_seconds()>OFFLINE_TIMEOUT
@@ -263,6 +267,7 @@ def check_offline_devices(cur, conn):
         d_icon=device_icon(dtype)
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
+        mac_sn_str = f"MAC: {mac} | SN: {sn}\n" if mac or sn else ""
         tg_tok, tg_cid, cl_email, cl_name = get_client_config(cur, client_id)
         client_suffix = f"\n🏢 Cliente: <b>{cl_name}</b>" if cl_name else ""
 
@@ -277,6 +282,7 @@ def check_offline_devices(cur, conn):
             msg=(f"❌ {dev_name}\n"
                  f"Problema: Agente sem comunicação por {downtime}s\n"
                  f"Host: {hostname or dev_name}\n"
+                 f"{mac_sn_str}"
                  f"Data do Evento: {now_str()}\n"
                  f"Último contato: {last_seen.strftime('%Y-%m-%d %H:%M:%S')}\n"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
@@ -284,7 +290,7 @@ def check_offline_devices(cur, conn):
                  +"Indicação: Agente parou de enviar dados. Verifique conectividade.")
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
-                f"Device '{dev_name}' parou de enviar dados.\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nÚltimo contato: {last_seen}\nHorário: {now_str()}", cl_email)
+                f"Device '{dev_name}' parou de enviar dados.\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_str()}", cl_email)
 
         elif not is_offline and was_offline:
             device_online_state[dev_id]=False
@@ -292,12 +298,13 @@ def check_offline_devices(cur, conn):
             msg=(f"✅ {dev_name}\n"
                  f"Normalizado: Agente voltou a enviar dados\n"
                  f"Host: {hostname or dev_name}\n"
+                 f"{mac_sn_str}"
                  f"Data da Normalização: {now_str()}\n"
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
                  +(f"Tags: {tags_str}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
             send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
-                f"Device '{dev_name}' voltou.\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
+                f"Device '{dev_name}' voltou.\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_str()}", cl_email)
 
         new_status="offline" if is_offline else "online"
         if new_status!=status:
@@ -315,21 +322,23 @@ def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None
     unit=get_unit(expr)
     sev_label,sev_icon=get_severity_level(expr,value,threshold)
     meta=SEVERITY.get(expr,{"icon":"📊","label":expr})
-    dtype,tags,dname=None,[],None
+    dtype,tags,dname,mac,sn=None,[],None,None,None
     tg_tok, tg_cid, cl_email, cl_name = get_client_config(cur, client_id)
     if device_id:
         try:
-            cur.execute("SELECT device_type,tags,name FROM devices WHERE id=%s",(device_id,))
+            cur.execute("SELECT device_type,tags,name,mac_address,serial_number FROM devices WHERE id=%s",(device_id,))
             row=cur.fetchone()
-            if row: dtype,tags,dname=row[0],row[1] or [],row[2]
+            if row: dtype,tags,dname,mac,sn=row[0],row[1] or [],row[2],row[3],row[4]
         except: pass
     d_icon=device_icon(dtype)
     tags_str=" ".join([f"#{t}" for t in tags]) if tags else ""
+    mac_sn_str = f"MAC: {mac} | SN: {sn}\n" if mac or sn else ""
     client_suffix = f"\n🏢 Cliente: <b>{cl_name}</b>" if cl_name else ""
     logger.warning(f"ALERT [{sev_label}] {name} | {host} | {expr}={value:.1f}{unit}")
     msg=(f"{sev_icon} {dname or host}\n"
          f"Problema: {meta['label']} atingiu {value:.1f}{unit} (limite: {threshold}{unit})\n"
          f"Host: {host}\n"
+         f"{mac_sn_str}"
          f"Data do Evento: {now_str()}\n"
          f"Trigger: {name}\n"
          +(f"Descrição: {cl_name}\n" if cl_name else "")
@@ -337,7 +346,7 @@ def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None
          +f"Indicação: {sev_label} — verifique o dispositivo.")
     send_telegram(msg, tg_tok, tg_cid)
     send_email(f"[{APP_NAME}] {sev_icon} {sev_label}: {name} em {host}",
-        f"ALERTA {sev_label}\n\nTrigger: {name}\nHost: {host}\nDevice: {dname or 'N/A'}\nCliente: {cl_name or 'N/A'}\nMétrica: {meta['label']} = {value:.1f}{unit}\nLimite: {threshold}{unit}\nHorário: {now_str()}", cl_email)
+        f"ALERTA {sev_label}\n\nTrigger: {name}\nHost: {host}\nDevice: {dname or 'N/A'}\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nMétrica: {meta['label']} = {value:.1f}{unit}\nLimite: {threshold}{unit}\nHorário: {now_str()}", cl_email)
 
 def send_status_summary(cur):
     global last_summary_time

@@ -70,7 +70,8 @@ async function initDB() {
           snmp_community TEXT DEFAULT 'public', snmp_version TEXT DEFAULT '2c',
           ssh_user TEXT, ssh_port INT DEFAULT 22, monitor_ping BOOLEAN DEFAULT TRUE,
           monitor_snmp BOOLEAN DEFAULT FALSE, monitor_agent BOOLEAN DEFAULT TRUE,
-          ddns_address TEXT DEFAULT '', monitor_port INT DEFAULT 0, notes TEXT DEFAULT ''
+          ddns_address TEXT DEFAULT '', monitor_port INT DEFAULT 0, notes TEXT DEFAULT '',
+          mac_address TEXT DEFAULT '', serial_number TEXT DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS metrics (
           id BIGSERIAL PRIMARY KEY, time TIMESTAMPTZ NOT NULL, host_id INT REFERENCES hosts(id) ON DELETE CASCADE,
@@ -95,7 +96,9 @@ async function initDB() {
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_agent BOOLEAN DEFAULT TRUE",
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_ping BOOLEAN DEFAULT TRUE",
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_snmp BOOLEAN DEFAULT FALSE",
-      "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS disk_percent FLOAT DEFAULT 0"
+      "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS disk_percent FLOAT DEFAULT 0",
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS mac_address TEXT DEFAULT ''",
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS serial_number TEXT DEFAULT ''"
     ];
     for (let m of migrations) { await pool.query(m).catch(() => {}); }
     console.log("Database Professional Restore: OK");
@@ -176,7 +179,8 @@ app.post("/devices", auth, async (req, res) => {
   const { 
     name, description, location, device_type, ip_address, tags, 
     ddns_address, monitor_port, monitor_ping, monitor_agent, notes, client_id,
-    snmp_community, snmp_version, ssh_user, ssh_port
+    snmp_community, snmp_version, ssh_user, ssh_port,
+    mac_address, serial_number
   } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
   const cid = req.user.role === "superadmin" ? (client_id || null) : req.user.client_id;
@@ -186,13 +190,15 @@ app.post("/devices", auth, async (req, res) => {
       INSERT INTO devices (
         name, description, location, token, device_type, ip_address, tags, 
         ddns_address, monitor_port, monitor_ping, monitor_agent, notes, client_id,
-        snmp_community, snmp_version, ssh_user, ssh_port
+        snmp_community, snmp_version, ssh_user, ssh_port,
+        mac_address, serial_number
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *
     `, [
       name, description||"", location||"", token, device_type||"other", ip_address||"", tags||[], 
       ddns_address||"", parseInt(monitor_port)||0, monitor_ping!==false, monitor_agent!==false, notes||"", cid,
-      snmp_community||"public", snmp_version||"2c", ssh_user||"", parseInt(ssh_port)||22
+      snmp_community||"public", snmp_version||"2c", ssh_user||"", parseInt(ssh_port)||22,
+      mac_address||"", serial_number||""
     ]);
     res.status(201).json(r.rows[0]);
     if (ddns_address && monitor_port) setImmediate(() => cloudMonitor(r.rows[0].id));
@@ -203,19 +209,22 @@ app.put("/devices/:id", auth, async (req, res) => {
   const { 
     name, description, location, device_type, ip_address, tags, 
     ddns_address, monitor_port, monitor_ping, monitor_agent, notes,
-    snmp_community, snmp_version, ssh_user, ssh_port
+    snmp_community, snmp_version, ssh_user, ssh_port,
+    mac_address, serial_number
   } = req.body;
   try {
     const r = await pool.query(`
       UPDATE devices SET 
         name=$1, description=$2, location=$3, device_type=$4, ip_address=$5, tags=$6, 
         ddns_address=$7, monitor_port=$8, monitor_ping=$9, monitor_agent=$10, notes=$11,
-        snmp_community=$12, snmp_version=$13, ssh_user=$14, ssh_port=$15
-      WHERE id=$16 RETURNING *
+        snmp_community=$12, snmp_version=$13, ssh_user=$14, ssh_port=$15,
+        mac_address=$16, serial_number=$17
+      WHERE id=$18 RETURNING *
     `, [
       name, description||"", location||"", device_type||"other", ip_address||"", tags||[], 
       ddns_address||"", parseInt(monitor_port)||0, monitor_ping!==false, monitor_agent!==false, notes||"",
       snmp_community||"public", snmp_version||"2c", ssh_user||"", parseInt(ssh_port)||22,
+      mac_address||"", serial_number||"",
       req.params.id
     ]);
     res.json(r.rows[0]);
@@ -344,7 +353,17 @@ app.post("/push", metricsLimiter, async (req, res) => {
       console.log(`[Push] Evento recebido: ${event_type} no canal ${channel} do dispositivo ${dev.name}`);
 
       // ── Disparar Alertas (Telegram / WhatsApp) ──
-      const msg = `🎬 *Alerta NexusWatch*\n\n🔹 *Evento:* ${event_type.replace(/_/g, " ")}\n🔹 *Device:* ${dev.name}\n🔹 *Canal:* ${channel || "N/A"}\n🔹 *Data:* ${new Date().toLocaleString("pt-BR")}\n\n⚠️ ${description || "Nenhuma descrição disponível."}`;
+      const devDetails = await pool.query("SELECT mac_address, serial_number FROM devices WHERE id=$1", [dev.id]);
+      const { mac_address, serial_number } = devDetails.rows[0];
+
+      let msg = `🎬 *Alerta NexusWatch*\n\n`;
+      msg += `🔹 *Evento:* ${event_type.replace(/_/g, " ")}\n`;
+      msg += `🔹 *Device:* ${dev.name}\n`;
+      if (serial_number) msg += `🔹 *S/N:* \`${serial_number}\`\n`;
+      if (mac_address) msg += `🔹 *MAC:* \`${mac_address}\`\n`;
+      msg += `🔹 *Canal:* ${channel || "N/A"}\n`;
+      msg += `🔹 *Data:* ${new Date().toLocaleString("pt-BR")}\n\n`;
+      msg += `⚠️ ${description || "Nenhuma descrição disponível."}`;
 
       // Telegram (Se configurado no cliente)
       const client = await pool.query("SELECT telegram_token, telegram_chat_id, phone FROM clients WHERE id=$1", [dev.client_id]);
