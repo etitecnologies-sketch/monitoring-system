@@ -711,8 +711,8 @@ function ClientsPage() {
   };
 
   const filtered = clients.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.city || "").toLowerCase().includes(search.toLowerCase())
+    (c.name || "").toLowerCase().includes((search || "").toLowerCase()) ||
+    (c.city || "").toLowerCase().includes((search || "").toLowerCase())
   );
 
   const statusColor = { active: "#22c55e", suspended: "#f59e0b", cancelled: "#ef4444" };
@@ -957,7 +957,7 @@ function DevicesPage({ userRole, userClientId }) {
     if (filter.type && d.device_type !== filter.type) return false;
     if (filter.status && d.status !== filter.status) return false;
     if (filter.client && String(d.client_id) !== filter.client) return false;
-    if (filter.search && !d.name.toLowerCase().includes(filter.search.toLowerCase()) && !(d.ip_address||"").includes(filter.search)) return false;
+    if (filter.search && !(d.name || "").toLowerCase().includes(filter.search.toLowerCase()) && !(d.ip_address||"").includes(filter.search)) return false;
     return true;
   });
 
@@ -1205,7 +1205,7 @@ function Dashboard({ userRole }) {
         {alerts.slice(0, 8).map((a) => (
           <div key={a.id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.trigger_name || a.expression.toUpperCase()}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.trigger_name || (a.expression || "").toUpperCase()}</span>
               <span style={S.badge(a.alert_type==="offline"?"#ef4444":"#f59e0b")}>{a.alert_type==="offline"?"🔴 OFFLINE":"⚠️ AVISO"}</span>
             </div>
             <div style={{ fontSize: 10, color: "#38bdf8", marginTop: 4 }}>{a.device_name||a.host}</div>
@@ -1310,7 +1310,7 @@ function EventsPage({ userRole }) {
   }, [load]);
 
   const getIcon = (type) => {
-    const t = type.toUpperCase();
+    const t = (type || "").toUpperCase();
     if (t.includes("PESSOA") || t.includes("HUMAN")) return "👤";
     if (t.includes("VEICULO") || t.includes("CARRO") || t.includes("CAR")) return "🚗";
     if (t.includes("VIDEO") || t.includes("PERDA")) return "⚠️";
