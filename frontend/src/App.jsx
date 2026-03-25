@@ -12,11 +12,19 @@ function useIsMobile() {
 }
 
 const rawApiBase = import.meta.env.VITE_API_URL || "";
+let API = rawApiBase.replace(/["']/g, "").trim();
+
+// Se o usuário esqueceu o https://, nós adicionamos automaticamente
+if (API && !API.startsWith("http")) {
+  API = `https://${API}`;
+}
+
 // Se a variável estiver vazia, tenta detectar o domínio da API baseado no domínio atual do Railway
-const API = rawApiBase.replace(/["']/g, "").trim() || 
-  (window.location.hostname.includes("railway.app") 
+if (!API) {
+  API = (window.location.hostname.includes("railway.app") 
     ? window.location.origin.replace("frontend", "ingest-api").replace("-production", "") // Tentativa de auto-detect
     : (window.location.hostname === "localhost" ? "http://localhost:3000" : window.location.origin));
+}
 
 const getToken = () => localStorage.getItem("token");
 const setToken = (t) => localStorage.setItem("token", t);
