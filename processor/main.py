@@ -340,6 +340,20 @@ def check_offline_devices(cur, conn):
         is_offline = diff > OFFLINE_TIMEOUT
         was_offline = device_online_state.get(dev_id, False) or (status == 'offline')
 
+        # Diagnóstico profundo para o usuário
+        if diff > 10:
+            logger.info(f"DEBUG OFFLINE: {dev_name} | Status Atual: {status} | Segundos sem sinal: {diff:.0f}s | Threshold: {OFFLINE_TIMEOUT}s | Is Offline: {is_offline}")
+        
+        if diff < -60: # Sinal vindo do futuro? (Erro de relógio)
+            logger.error(f"ERRO DE RELÓGIO: {dev_name} tem last_seen no futuro! {last_seen} vs {now}")
+            # Força o last_seen para agora para corrigir o cálculo no próximo ciclo
+            try:
+                with get_conn() as conn2:
+                    with conn2.cursor() as cur2:
+                        cur2.execute("UPDATE devices SET last_seen=NOW() WHERE id=%s", (dev_id,))
+                        conn2.commit()
+            except: pass
+
         # Se o monitoramento de agente/push estiver desativado e o dispositivo estiver online, pulamos
         if not agent_enabled and not is_offline:
             continue
