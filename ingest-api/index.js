@@ -143,7 +143,8 @@ app.get("/devices", auth, async (req, res) => {
       SELECT d.*, c.name as client_name,
         (SELECT latency_ms FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_latency,
         (SELECT cpu FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_cpu,
-        (SELECT memory FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_memory
+        (SELECT memory FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_memory,
+        (SELECT status FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_status
       FROM devices d
       LEFT JOIN clients c ON c.id = d.client_id
       WHERE 1=1
