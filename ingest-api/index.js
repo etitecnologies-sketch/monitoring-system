@@ -15,8 +15,15 @@ const app = express();
 // Middleware de diagnóstico para logar todas as requisições no console do Railway
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  // Redireciona POST na raiz para /push (ajuda câmeras que não deixam mudar o caminho)
+  if ((req.url === '/' || req.url === '') && req.method === 'POST') {
+    req.url = '/push';
+  }
   next();
 });
+
+app.get("/", (req, res) => res.json({ status: "online", service: "NexusWatch API", version: "1.0.3" }));
+app.get("/push", (req, res) => res.json({ message: "Endpoint pronto para receber POST das câmeras." }));
 
 // ── Security & Middleware ────────────────────────────────────
 app.use(express.json({ limit: "100kb" }));
@@ -562,14 +569,6 @@ async function cloudMonitor(deviceId = null) {
   } catch (e) { console.error("Cloud Monitor Error:", e.message); }
 }
 setInterval(cloudMonitor, 60000);
-
-// Middleware para aceitar conexões de Auto Registro que podem vir com formatos variados
-app.use((req, res, next) => {
-  if ((req.url === '/' || req.url === '') && req.method === 'POST') {
-    req.url = '/push';
-  }
-  next();
-});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
