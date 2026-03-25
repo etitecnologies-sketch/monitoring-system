@@ -325,8 +325,8 @@ def check_ping_devices(cur, conn):
             msg=(f"✅ <b>{edev_name}</b>\n"
                  f"Normalizado: Host <b>{etarget}</b> está respondendo via {method}\n\n"
                  f"Host: {edev_name}\n"
-                 f"Latência Atual: {latency:.1f}ms\n"
-                 f"Data da Normalização: {now_display()}\n"
+                 f"Latência Atual: <b>{latency:.1f}ms</b>\n"
+                 f"Data da Normalização: <b>{now_display()}</b>\n"
                  f"Detalhes: {d_icon} {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n"
                  +(f"Descrição: {ecl_name}\n" if cl_name else "")
                  +(f"Tags: {escape_html(tags_str)}\n" if tags_str else ""))
@@ -350,8 +350,8 @@ def check_ping_devices(cur, conn):
             msg=(f"❌ <b>{edev_name}</b>\n"
                  f"Problema: Host <b>{etarget}</b> está indisponível via {method}\n\n"
                  f"Host: {edev_name}\n"
-                 f"Última Latência: {last_latency if last_latency else 0:.1f}ms\n"
-                 f"Data do Evento: {now_display()}\n"
+                 f"Última Latência: <b>{last_latency if last_latency else 0:.1f}ms</b>\n"
+                 f"Data do Evento: <b>{now_display()}</b>\n"
                  f"Detalhes: {d_icon} {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n"
                  +(f"Descrição: {ecl_name}\n" if cl_name else "")
                  +(f"Tags: {escape_html(tags_str)}\n" if tags_str else "")
@@ -359,7 +359,7 @@ def check_ping_devices(cur, conn):
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
             send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
-                f"Device '{dev_name}' ficou OFFLINE.\nAlvo: {target}\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
+                f"Device '{dev_name}' ficou OFFLINE.\nAlvo: {target}\nÚltima Latência: {last_latency if last_latency else 0:.1f}ms\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_display()}", cl_email)
 
 def check_offline_devices(cur, conn):
     # Monitora ABSOLUTAMENTE TODOS os dispositivos que possuem um last_seen
@@ -382,16 +382,21 @@ def check_offline_devices(cur, conn):
             last_seen = last_seen.astimezone(datetime.timezone.utc)
         
         diff = (now - last_seen).total_seconds()
+        
+        # Log interno para depuração (ver no console do Railway)
+        if diff > 5:
+            logger.info(f"DEBUG OFFLINE: {dev_name} sem sinal há {diff:.1f}s")
+
         is_offline = diff > OFFLINE_TIMEOUT
         
         # Sincroniza o status real
         current_status = "offline" if is_offline else "online"
         
-        # Se houve mudança de status no banco de dados
+        # Se o status real for diferente do que está no banco, atualizamos e alertamos
         if current_status != db_status:
             try:
+                # Atualiza tabela de devices
                 cur.execute("UPDATE devices SET status=%s WHERE id=%s", (current_status, dev_id))
-                conn.commit()
                 
                 # Prepara notificações
                 edev_name = escape_html(dev_name)
@@ -400,23 +405,26 @@ def check_offline_devices(cur, conn):
                 ecl_name = escape_html(cl_name) if cl_name else ""
                 tags_list = tags if tags else []
                 tags_str = " ".join([f"#{t}" for t in tags_list]) if tags_list else ""
-                mac_sn_str = f"Detalhes: {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n" if mac or sn else ""
+                mac_sn_str = f"MAC: {escape_html(mac)} | SN: {escape_html(sn)}\n" if mac or sn else ""
                 
                 # Formata a latência para exibição
-                latency_str = f"{last_latency:.1f}ms" if last_latency is not None and last_latency > 0 else "N/A"
-                event_time = last_seen.astimezone(datetime.timezone.get_default_free_timezone() if hasattr(datetime.timezone, 'get_default_free_timezone') else None).strftime("%d/%m/%Y %H:%M:%S") if last_seen else now_str()
+                latency_val = last_latency if last_latency is not None else 0
+                latency_str = f"<b>{latency_val:.1f}ms</b>"
 
                 if current_status == "offline":
-                    # Alerta de Queda e Métrica Offline
+                    # REGISTRA ALERTA NO BANCO
                     cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'offline',1,0,'offline',%s)",(dev_id,hostname or dev_name,client_id))
+                    # REGISTRA MÉTRICA DE QUEDA
                     cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,0,'offline')", (hostname or dev_name, dev_id))
                     conn.commit()
                     
+                    logger.warning(f"🚨 ALERTA: {dev_name} ficou OFFLINE!")
+
                     msg=(f"❌ <b>{edev_name}</b>\n"
                          f"Problema: Host <b>{ehostname}</b> está indisponível\n\n"
                          f"Host: {edev_name}\n"
                          f"Última Latência: {latency_str}\n"
-                         f"Data do Evento: {now_display()}\n"
+                         f"Data do Evento: <b>{now_display()}</b>\n"
                          f"{mac_sn_str}"
                          +(f"Descrição: {ecl_name}\n" if cl_name else "")
                          +(f"Tags: {escape_html(tags_str)}\n" if tags_str else "")
@@ -425,18 +433,20 @@ def check_offline_devices(cur, conn):
                     send_telegram(msg, tg_tok, tg_cid)
                     send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
                     send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
-                        f"Device '{dev_name}' parou de enviar dados.\nLatência: {latency_str}\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_display()}", cl_email)
+                        f"Device '{dev_name}' parou de enviar dados.\nLatência: {latency_val:.1f}ms\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_display()}", cl_email)
                 
                 else:
-                    # Alerta de Retorno e Métrica Online
-                    logger.info(f"✅ ONLINE RECUPERADO: {dev_name}")
-                    cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,%s,'online')", (hostname or dev_name, dev_id, last_latency or 0))
+                    # REGISTRA MÉTRICA DE RETORNO
+                    cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,%s,'online')", (hostname or dev_name, dev_id, latency_val))
                     conn.commit()
+                    
+                    logger.info(f"✅ ALERTA: {dev_name} voltou ONLINE!")
+
                     msg=(f"✅ <b>{edev_name}</b>\n"
                          f"Normalizado: Dispositivo voltou a se comunicar\n\n"
                          f"Host: {edev_name}\n"
                          f"Latência Atual: {latency_str}\n"
-                         f"Data da Normalização: {now_display()}\n"
+                         f"Data da Normalização: <b>{now_display()}</b>\n"
                          f"{mac_sn_str}"
                          +(f"Descrição: {ecl_name}\n" if cl_name else "")
                          +(f"Tags: {escape_html(tags_str)}\n" if tags_str else ""))
@@ -444,7 +454,7 @@ def check_offline_devices(cur, conn):
                     send_telegram(msg, tg_tok, tg_cid)
                     send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
                     send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
-                        f"Device '{dev_name}' voltou.\nLatência: {latency_str}\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_display()}", cl_email)
+                        f"Device '{dev_name}' voltou.\nLatência: {latency_val:.1f}ms\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_display()}", cl_email)
             except Exception as e:
                 logger.error(f"Error updating status/sending alert for {dev_name}: {e}")
                 conn.rollback()
