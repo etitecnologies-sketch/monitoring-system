@@ -795,7 +795,8 @@ async function cloudMonitor(deviceId = null) {
 
       const updateStatus = async (status, latency = 0, error = null) => {
         const notePrefix = isPrivate ? "🛡️ VPN " : "☁️ Cloud ";
-        await pool.query("UPDATE devices SET status=$1, last_seen=NOW(), notes=$2 WHERE id=$3", [status, error ? `${notePrefix}Error: ${error}` : `${notePrefix}OK`, dev.id]);
+        const lastSeenUpdate = status === "online" ? ", last_seen=NOW()" : "";
+        await pool.query(`UPDATE devices SET status=$1${lastSeenUpdate}, notes=$2 WHERE id=$3`, [status, error ? `${notePrefix}Error: ${error}` : `${notePrefix}OK`, dev.id]);
         await pool.query("INSERT INTO metrics (time, host, device_id, latency_ms, status) VALUES (NOW(), $1, $2, $3, $4)", [targetHost, dev.id, latency, status]);
         
         if (WEBSOCKET_URL) {

@@ -359,62 +359,56 @@ def check_offline_devices(cur, conn):
             continue
         
         now=datetime.datetime.now(datetime.timezone.utc)
-        if last_seen and last_seen.tzinfo is None:
-            last_seen = last_seen.replace(tzinfo=datetime.timezone.utc)
+        
+        # Garantir que last_seen seja offset-aware (UTC)
+        if last_seen:
+            if last_seen.tzinfo is None:
+                # Se não tem timezone, assume que vem do DB em UTC (padrão Railway/Postgres)
+                last_seen = last_seen.replace(tzinfo=datetime.timezone.utc)
+            else:
+                # Se já tem, converte para UTC para garantir comparação correta
+                last_seen = last_seen.astimezone(datetime.timezone.utc)
         
         diff = (now-last_seen).total_seconds()
         is_offline = diff > OFFLINE_TIMEOUT
-        was_offline = device_online_state.get(dev_id, False) or (status == 'offline')
-
-        # Diagnóstico profundo para o usuário
-        if diff > 10:
-            logger.info(f"DEBUG OFFLINE: {dev_name} | Status Atual: {status} | Segundos sem sinal: {diff:.0f}s | Threshold: {OFFLINE_TIMEOUT}s | Is Offline: {is_offline}")
         
-        if diff < -60: # Sinal vindo do futuro? (Erro de relógio)
-            logger.error(f"ERRO DE RELÓGIO: {dev_name} tem last_seen no futuro! {last_seen} vs {now}")
-            # Força o last_seen para agora para corrigir o cálculo no próximo ciclo
-            try:
-                with get_conn() as conn2:
-                    with conn2.cursor() as cur2:
-                        cur2.execute("UPDATE devices SET last_seen=NOW() WHERE id=%s", (dev_id,))
-                        conn2.commit()
-            except: pass
+        # Recupera o estado anterior do banco para evitar dessincronização da memória
+        was_offline = (status == 'offline') or device_online_state.get(dev_id, False)
 
-        # Se o monitoramento de agente/push estiver desativado e o dispositivo estiver online, pulamos
-        if not agent_enabled and not is_offline:
-            continue
-
-        # Log de diagnóstico no Railway console
-        if diff > 15: # Reduzido log para 15s para depurar melhor
-            logger.info(f"Monitorando queda: {dev_name} ({dev_id}) sem sinal há {diff:.0f}s (Threshold: {OFFLINE_TIMEOUT}s)")
+        # Log de diagnóstico para depuração (reduzido para não poluir)
+        if diff > 30 and not is_offline:
+            logger.info(f"Monitorando queda: {dev_name} ({dev_id}) sem sinal há {diff:.0f}s (Limite: {OFFLINE_TIMEOUT}s)")
         
-        d_icon=device_icon(dtype)
-        tags_list=tags if tags else []
-        tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
-        
-        # Escapando HTML para evitar erros no Telegram
-        edev_name = html.escape(dev_name)
-        ehostname = html.escape(hostname or dev_name)
-        
-        mac_sn_str = f"Detalhes do Equipamento: {html.escape(dtype or 'other')} - {html.escape(mac or 'N/A')} - {html.escape(sn or 'N/A')}\n" if mac or sn else ""
-        tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
-        ecl_name = html.escape(cl_name) if cl_name else ""
-
         if is_offline and not was_offline:
-            device_online_state[dev_id]=True
+            device_online_state[dev_id]=True # Marca como offline na memória
             try:
+                # Garante que o status no DB seja offline
+                cur.execute("UPDATE devices SET status='offline' WHERE id=%s",(dev_id,))
                 cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'offline',1,0,'offline',%s)",(dev_id,hostname or dev_name,client_id))
                 conn.commit()
             except Exception as e: logger.error(f"Offline alert DB save error: {e}"); conn.rollback()
             
             logger.warning(f"🚨 OFFLINE DETECTADO: {dev_name} ({diff:.0f}s)")
+            
+            d_icon=device_icon(dtype)
+            tags_list=tags if tags else []
+            tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
+            
+            # Escapando HTML para evitar erros no Telegram
+            edev_name = escape_html(dev_name)
+            ehostname = escape_html(hostname or dev_name)
+            
+            mac_sn_str = f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n" if mac or sn else ""
+            tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
+            ecl_name = escape_html(cl_name) if cl_name else ""
+
             msg=(f"❌ <b>{edev_name}</b>\n"
                  f"Problema: Host <b>{ehostname}</b> está indisponível\n\n"
                  f"Host: {edev_name}\n"
                  f"Data do Evento: {now_str()}\n"
                  f"{mac_sn_str}"
                  +(f"Descrição: {ecl_name}\n" if cl_name else "")
-                 +(f"Tags: {html.escape(tags_str)}\n" if tags_str else "")
+                 +(f"Tags: {escape_html(tags_str)}\n" if tags_str else "")
                  +"Indicação: Verifique a conectividade do dispositivo.")
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
@@ -424,21 +418,31 @@ def check_offline_devices(cur, conn):
         elif not is_offline and was_offline:
             device_online_state[dev_id]=False
             logger.info(f"✅ ONLINE RECUPERADO: {dev_name}")
+            
+            d_icon=device_icon(dtype)
+            tags_list=tags if tags else []
+            tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
+            
+            edev_name = escape_html(dev_name)
+            mac_sn_str = f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n" if mac or sn else ""
+            tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
+            ecl_name = escape_html(cl_name) if cl_name else ""
+
             msg=(f"✅ <b>{edev_name}</b>\n"
                  f"Normalizado: Dispositivo voltou a se comunicar\n\n"
                  f"Host: {edev_name}\n"
                  f"Data da Normalização: {now_str()}\n"
                  f"{mac_sn_str}"
                  +(f"Descrição: {ecl_name}\n" if cl_name else "")
-                 +(f"Tags: {html.escape(tags_str)}\n" if tags_str else ""))
+                 +(f"Tags: {escape_html(tags_str)}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
             send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
                 f"Device '{dev_name}' voltou.\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_str()}", cl_email)
-
-        new_status="offline" if is_offline else "online"
-        if new_status!=status:
-            try: cur.execute("UPDATE devices SET status=%s WHERE id=%s",(new_status,dev_id)); conn.commit()
+            
+            try:
+                cur.execute("UPDATE devices SET status='online' WHERE id=%s",(dev_id,))
+                conn.commit()
             except: conn.rollback()
 
 def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None,client_id=None):
