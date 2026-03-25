@@ -178,7 +178,9 @@ export default function Devices() {
   return (
     <div style={S.page}>
       <div style={S.header}>
-        <h2 style={S.pageTitle}>🚀 CENTRAL DE DISPOSITIVOS (v1.0.2)</h2>
+        <h2 style={{...S.pageTitle, background: "linear-gradient(90deg, #6366f1, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"}}>
+          🔥 CENTRAL DE DISPOSITIVOS v1.0.3 (CACHE FIXED)
+        </h2>
         <button onClick={() => setModal("new")} style={S.addBtn}>+ Novo Dispositivo</button>
       </div>
       <div style={S.grid}>
