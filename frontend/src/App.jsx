@@ -12,19 +12,31 @@ function useIsMobile() {
 }
 
 const rawApiBase = import.meta.env.VITE_API_URL || "";
+// ── DETECÇÃO AGRESSIVA DA API ──
+// Esta lógica ignora falhas de configuração e tenta achar a API de qualquer jeito
 let API = rawApiBase.replace(/["']/g, "").trim();
 
-// Se o usuário esqueceu o https://, nós adicionamos automaticamente
-if (API && !API.startsWith("http")) {
-  API = `https://${API}`;
+if (!API || API === "/" || API.length < 5) {
+  const h = window.location.hostname;
+  if (h === "localhost" || h === "127.0.0.1") {
+    API = "http://localhost:3000";
+  } else if (h.includes("railway.app")) {
+    // Se estamos no Railway, a API geralmente segue o padrão de nome do projeto
+    // Vamos tentar reconstruir o domínio da API baseado no domínio do frontend
+    const parts = h.split("-");
+    // Remove o sufixo '-production' ou o hash final se existir e tenta trocar 'frontend' por 'ingest-api'
+    API = `https://${h.replace("frontend", "ingest-api")}`;
+    // Fallback: Se não houver 'frontend' no nome, usa o origin atual (mesmo domínio)
+    if (!h.includes("frontend")) API = window.location.origin;
+  } else {
+    API = window.location.origin;
+  }
 }
 
-// Se a variável estiver vazia, tenta detectar o domínio da API baseado no domínio atual do Railway
-if (!API) {
-  API = (window.location.hostname.includes("railway.app") 
-    ? window.location.origin.replace("frontend", "ingest-api").replace("-production", "") // Tentativa de auto-detect
-    : (window.location.hostname === "localhost" ? "http://localhost:3000" : window.location.origin));
-}
+if (API && !API.startsWith("http")) API = `https://${API}`;
+if (API.endsWith("/")) API = API.slice(0, -1);
+
+console.log("🚀 NEXUSWATCH API TARGET:", API);
 
 const getToken = () => localStorage.getItem("token");
 const setToken = (t) => localStorage.setItem("token", t);
