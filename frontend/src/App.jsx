@@ -380,13 +380,23 @@ function AuthPage({ onLogin }) {
 
   useEffect(() => {
     const checkStatus = async () => {
-      console.log(`[App] Verificando status da API em: ${API}/auth/status`);
+      // 1. Prioridade absoluta para a URL da barra de endereços do navegador (Fallback manual)
+      const urlParams = new URLSearchParams(window.location.search);
+      const manualApi = urlParams.get("api");
+      let finalApi = API;
+
+      if (manualApi) {
+        finalApi = manualApi.replace(/["'`\s\n\r]/g, "").trim().replace(/\/$/, "");
+        console.log("🛠️ Usando API Manual via URL:", finalApi);
+      }
+
+      console.log(`[App] Verificando status da API em: ${finalApi}/auth/status`);
       
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-        const res = await fetch(`${API}/auth/status`, { 
+        const res = await fetch(`${finalApi}/auth/status`, { 
           signal: controller.signal,
           headers: { "Accept": "application/json" }
         });
@@ -399,7 +409,17 @@ function AuthPage({ onLogin }) {
         setErr(""); 
       } catch (e) {
         console.error("[App] API Connection Error:", e);
-        setErr(`Erro ao conectar na API: ${e.message}. Verifique se o link ${API} está correto.`);
+        
+        // Se falhou, mas temos um hostname do Railway, tenta o fallback automático UMA vez
+        const h = window.location.hostname;
+        if (h.includes("railway.app") && h.includes("frontend") && !manualApi) {
+          const autoFallback = "https://" + h.replace("frontend", "ingest-api");
+          console.log("🔄 Tentando auto-fallback para:", autoFallback);
+          window.location.href = window.location.pathname + "?api=" + autoFallback;
+          return;
+        }
+
+        setErr(`❌ Erro de Conexão: ${e.message}. Verifique se o link ${finalApi} está correto no Railway.`);
         setStep("login");
       }
     };
