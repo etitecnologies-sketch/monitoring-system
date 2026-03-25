@@ -1,4 +1,32 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Component } from 'react';
+
+// Error Boundary para evitar tela branca total
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, background: '#050508', color: '#fff', height: '100vh', fontFamily: 'monospace' }}>
+          <h1 style={{ color: '#ef4444' }}>❌ Erro Crítico no Frontend</h1>
+          <pre style={{ background: '#1a1a25', padding: 20, borderRadius: 8, overflow: 'auto' }}>
+            {this.state.error?.toString()}
+          </pre>
+          <button 
+            style={{ padding: '10px 20px', background: '#38bdf8', border: 'none', borderRadius: 4, cursor: 'pointer', marginTop: 20 }}
+            onClick={() => { localStorage.clear(); window.location.href = '/'; }}
+          >
+            Limpar Cache e Reiniciar
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Hook para detectar tela mobile
 function useIsMobile() {
@@ -12,20 +40,28 @@ function useIsMobile() {
 }
 
 const getInitialAPI = () => {
+  // 1. Prioridade para override manual via URL (ex: ?api=https://...)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlApi = urlParams.get("api");
+  if (urlApi && urlApi.length > 5) return urlApi;
+
+  // 2. Verifica se há uma URL salva no localStorage
+  const savedApi = localStorage.getItem("NEXUS_API_URL");
+  if (savedApi && savedApi.length > 5) return savedApi;
+
+  // 3. Verifica variável de ambiente do Vite
   const envApi = import.meta.env.VITE_API_URL;
-  const cleanApi = (envApi || "").replace(/["'`\s\n\r]/g, "").trim();
-  
-  if (cleanApi && cleanApi.length > 5) return cleanApi;
+  if (envApi && envApi.length > 5) return envApi;
   
   const h = window.location.hostname;
+  
+  // 4. Localhost
   if (h === "localhost" || h === "127.0.0.1") return "http://localhost:3000";
   
-  // Tenta deduzir a URL da API se estiver no Railway
+  // 5. Railway Auto-detect (Simplificado)
   if (h.includes("railway.app")) {
-    // Se o frontend é powerful-unity-production.up.railway.app
-    // A API provavelmente é ingest-api-production.up.railway.app
     const parts = h.split(".");
-    const subdomain = parts[0]; // powerful-unity-production
+    const subdomain = parts[0];
     if (subdomain.includes("powerful-unity")) {
       return "https://" + subdomain.replace("powerful-unity", "ingest-api") + ".up.railway.app";
     }
@@ -34,6 +70,7 @@ const getInitialAPI = () => {
     }
   }
   
+  // 6. Fallback final: Mesma origem
   return window.location.origin;
 };
 
@@ -1871,6 +1908,14 @@ function SolarPage({ userRole }) {
 }
 
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <NexusApp />
+    </ErrorBoundary>
+  );
+}
+
+function NexusApp() {
   const isMobile = useIsMobile();
   const [authed, setAuthed] = useState(!!getToken());
   const [userRole, setUserRole] = useState("superadmin");
