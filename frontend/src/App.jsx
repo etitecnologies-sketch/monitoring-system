@@ -13,27 +13,56 @@ function useIsMobile() {
 
 const getInitialAPI = () => {
   const envApi = import.meta.env.VITE_API_URL;
-  // Limpa TUDO e força HTTPS
-  let cleanApi = (envApi || "").replace(/["'`\s\n\r]/g, "").trim();
-  
-  if (cleanApi.startsWith("http://")) {
-    cleanApi = cleanApi.replace("http://", "https://");
-  }
+  const cleanApi = (envApi || "").replace(/["'`\s\n\r]/g, "").trim();
   
   if (cleanApi && cleanApi.length > 5) return cleanApi;
   
   const h = window.location.hostname;
   if (h === "localhost" || h === "127.0.0.1") return "http://localhost:3000";
   
-  // Se estiver no Railway e não tiver variável, tenta trocar o prefixo por 'ingest-api'
-  if (h.includes("railway.app") && !cleanApi) {
-    // Tenta detectar se o serviço atual tem um nome comum e troca pelo da API
-    if (h.includes("frontend")) return "https://" + h.replace("frontend", "ingest-api");
-    if (h.includes("powerful-unity")) return "https://" + h.replace("powerful-unity", "ingest-api");
+  // Tenta deduzir a URL da API se estiver no Railway
+  if (h.includes("railway.app")) {
+    // Se o frontend é powerful-unity-production.up.railway.app
+    // A API provavelmente é ingest-api-production.up.railway.app
+    const parts = h.split(".");
+    const subdomain = parts[0]; // powerful-unity-production
+    if (subdomain.includes("powerful-unity")) {
+      return "https://" + subdomain.replace("powerful-unity", "ingest-api") + ".up.railway.app";
+    }
+    if (subdomain.includes("frontend")) {
+      return "https://" + subdomain.replace("frontend", "ingest-api") + ".up.railway.app";
+    }
   }
   
-  return window.location.origin.replace("http://", "https://");
+  return window.location.origin;
 };
+
+const FuturisticLogo = () => (
+  <svg width="42" height="42" viewBox="0 0 100 100" style={{ marginRight: 12, filter: "drop-shadow(0 0 8px rgba(56, 189, 248, 0.6))" }}>
+    <defs>
+      <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#0ea5e9" />
+        <stop offset="100%" stopColor="#6366f1" />
+      </linearGradient>
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" fill="none" stroke="url(#logoGrad)" strokeWidth="3" strokeDasharray="20 10" />
+    <path d="M50 30 L70 40 L70 60 L50 70 L30 60 L30 40 Z" fill="url(#logoGrad)" opacity="0.9">
+      <animate attributeName="opacity" values="0.6;1;0.6" dur="3s" repeatCount="indefinite" />
+    </path>
+    <circle cx="50" cy="50" r="5" fill="#fff" filter="url(#glow)">
+      <animate attributeName="r" values="4;6;4" dur="2s" repeatCount="indefinite" />
+    </circle>
+    <line x1="50" y1="5" x2="50" y2="25" stroke="url(#logoGrad)" strokeWidth="2" />
+    <line x1="10" y1="25" x2="25" y2="35" stroke="url(#logoGrad)" strokeWidth="2" />
+    <line x1="90" y1="25" x2="75" y2="35" stroke="url(#logoGrad)" strokeWidth="2" />
+  </svg>
+);
 
 const API = getInitialAPI().replace(/\/$/, "");
 
@@ -424,17 +453,7 @@ function AuthPage({ onLogin }) {
         setErr(""); 
       } catch (e) {
         console.error("[App] API Connection Error:", e);
-        
-        // Se falhou, mas temos um hostname do Railway, tenta o fallback automático UMA vez
-        const h = window.location.hostname;
-        if (h.includes("railway.app") && h.includes("frontend") && !manualApi) {
-          const autoFallback = "https://" + h.replace("frontend", "ingest-api");
-          console.log("🔄 Tentando auto-fallback para:", autoFallback);
-          window.location.href = window.location.pathname + "?api=" + autoFallback;
-          return;
-        }
-
-        setErr(`❌ Erro de Conexão: ${e.message}. Verifique se o link ${finalApi} está correto no Railway.`);
+        setErr(`❌ Erro de Conexão: ${e.message}. Verifique se o link ${finalApi} está correto.`);
         setStep("login");
       }
     };
@@ -1850,33 +1869,6 @@ function SolarPage({ userRole }) {
     </div>
   );
 }
-
-const FuturisticLogo = () => (
-  <svg width="42" height="42" viewBox="0 0 100 100" style={{ marginRight: 12, filter: "drop-shadow(0 0 8px rgba(56, 189, 248, 0.6))" }}>
-    <defs>
-      <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#0ea5e9" />
-        <stop offset="100%" stopColor="#6366f1" />
-      </linearGradient>
-      <filter id="glow">
-        <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-        <feMerge>
-          <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
-    </defs>
-    <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" fill="none" stroke="url(#logoGrad)" strokeWidth="3" strokeDasharray="20 10" />
-    <path d="M50 30 L70 40 L70 60 L50 70 L30 60 L30 40 Z" fill="url(#logoGrad)" opacity="0.9">
-      <animate attributeName="opacity" values="0.6;1;0.6" dur="3s" repeatCount="indefinite" />
-    </path>
-    <circle cx="50" cy="50" r="5" fill="#fff" filter="url(#glow)">
-      <animate attributeName="r" values="4;6;4" dur="2s" repeatCount="indefinite" />
-    </circle>
-    <line x1="50" y1="5" x2="50" y2="25" stroke="url(#logoGrad)" strokeWidth="2" />
-    <line x1="10" y1="25" x2="25" y2="35" stroke="url(#logoGrad)" strokeWidth="2" />
-    <line x1="90" y1="25" x2="75" y2="35" stroke="url(#logoGrad)" strokeWidth="2" />
-  </svg>
-);
 
 export default function App() {
   const isMobile = useIsMobile();
