@@ -526,4 +526,8 @@ setInterval(cloudMonitor, 60000);
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => console.log(`Professional API RESTORED on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`=========================================`);
+  console.log(`🚀 NexusWatch API Online na Porta: ${PORT}`);
+  console.log(`=========================================`);
+});
