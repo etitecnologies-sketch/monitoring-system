@@ -411,11 +411,14 @@ def collect_huawei(inv):
                 r = session.post(f"{BASE}/rest/openapi/login", json=login_payload, timeout=20)
                 
                 if r.status_code == 200:
-                    token = r.json().get("data")
+                    login_data = r.json()
+                    token = login_data.get("data")
                     if token:
                         session.headers.update({"XSRF-TOKEN": token})
+                        # stationCodes deve ser uma string com IDs separados por vírgula
                         r2 = session.post(f"{BASE}/rest/openapi/pvms/v1/station/get-station-real-kpi", 
-                                         json={"stationCodes": station_id}, timeout=20)
+                                         json={"stationCodes": str(station_id)}, timeout=20)
+                        
                         if r2.status_code == 200:
                             data_list = r2.json().get("data", [])
                             if data_list:
@@ -426,17 +429,32 @@ def collect_huawei(inv):
                                     "energy_total_kwh": float(flow.get("totalPower", 0) or 0),
                                     "status": "generating" if float(flow.get("activePower", 0) or 0) > 0 else "idle"
                                 }
+                        else:
+                            logger.error(f"Huawei Northbound Error {r2.status_code}: {r2.text}")
 
-                # Tentativa 2: Web Login (Fallback se Northbound não estiver ativa)
-                logger.info(f"API Northbound falhou, tentando Web Login para {inv['name']}...")
+                # Tentativa 2: Web Login (Fallback)
+                logger.info(f"Tentando Web Login para {inv['name']} em {BASE}...")
                 login_web = {
                     "username": user, "password": pwd,
                     "clientObject": {"clientType": "WEB", "lang": "pt_BR"}
                 }
                 r_web = session.post(f"{BASE}/rest/neteco/web/sequence/v2/user/login", json=login_web, timeout=20)
                 
-                # Se logou no web, tenta pegar o resumo da usina
                 if r_web.status_code == 200:
+                    # Tenta pegar dados via Energy Flow (mais detalhado)
+                    r_flow = session.post(f"{BASE}/rest/pvms/web/station/v1/overview/energy-flow", 
+                                         json={"stationDn": station_id}, timeout=20)
+                    
+                    if r_flow.status_code == 200:
+                        d = r_flow.json().get("data", {}) or {}
+                        return {
+                            "power_w": float(d.get("productPower", d.get("realTimePower", 0)) or 0) * 1000,
+                            "energy_today_kwh": float(d.get("dailyEnergy", d.get("dayPower", 0)) or 0),
+                            "energy_total_kwh": float(d.get("cumulativeEnergy", d.get("totalEnergy", 0)) or 0),
+                            "status": "generating" if float(d.get("productPower", 0) or 0) > 0 else "idle"
+                        }
+                    
+                    # Se falhou flow, tenta KPI básico
                     r_data = session.post(f"{BASE}/rest/pvms/web/station/v1/overview/base-kpi", 
                                          json={"stationDn": station_id}, timeout=20)
                     if r_data.status_code == 200:
@@ -447,6 +465,8 @@ def collect_huawei(inv):
                             "energy_total_kwh": float(d.get("cumulativeEnergy", 0) or 0),
                             "status": "generating" if float(d.get("realTimePower", 0) or 0) > 0 else "idle"
                         }
+                else:
+                    logger.error(f"Huawei Web Login Error {r_web.status_code}: {r_web.text}")
             except Exception as e:
                 logger.error(f"Falha na região {BASE}: {str(e)}")
                 continue

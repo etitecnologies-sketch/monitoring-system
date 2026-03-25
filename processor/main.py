@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 APP_NAME        = "NexusWatch Pro"
 DATABASE_URL    = os.environ["DATABASE_URL"]
 EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "5"))
-OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "120"))
+OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "45")) # Reduzido para 45s para alerta rápido
 ALERT_COOLDOWN  = int(os.getenv("ALERT_COOLDOWN", "120"))
 PING_TIMEOUT    = int(os.getenv("PING_TIMEOUT", "3"))
 PING_COUNT      = int(os.getenv("PING_COUNT", "1"))
@@ -310,6 +310,10 @@ def check_offline_devices(cur, conn):
         now=datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
         is_offline=(now-last_seen).total_seconds()>OFFLINE_TIMEOUT
         was_offline=device_online_state.get(dev_id,False)
+
+        # DEBUG: Log para acompanhar o tempo de queda no console do Railway
+        if (now-last_seen).total_seconds() > 20:
+            logger.info(f"Monitorando queda: {dev_name} sem sinal há {(now-last_seen).total_seconds():.0f}s")
         d_icon=device_icon(dtype)
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
