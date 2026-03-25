@@ -187,7 +187,14 @@ async function initDB() {
 initDB();
 
 const JWT_SECRET = process.env.JWT_SECRET || "nexuswatch-secret-key-2024";
-const WEBSOCKET_URL = (process.env.WEBSOCKET_URL || "").replace(/["'`\s]/g, "").trim();
+const sanitize = (v) => v ? v.replace(/["'`\s]/g, "").trim() : "";
+const WEBSOCKET_URL = sanitize(process.env.WEBSOCKET_URL || "");
+const TG_TOKEN_GLOBAL = sanitize(process.env.TELEGRAM_TOKEN || "");
+const TG_CHAT_ID_GLOBAL = sanitize(process.env.TELEGRAM_CHAT_ID || "");
+const WA_API_URL_GLOBAL = sanitize(process.env.WA_API_URL || "");
+const WA_INSTANCE_GLOBAL = sanitize(process.env.WA_INSTANCE || "");
+const WA_TOKEN_GLOBAL = sanitize(process.env.WA_TOKEN || "");
+const WA_NUMBER_GLOBAL = sanitize(process.env.WA_NUMBER || "");
 
 // ── Middlewares ──────────────────────────────────────────────
 function auth(req, res, next) {
@@ -631,22 +638,25 @@ app.post("/push", metricsLimiter, async (req, res) => {
       msg += `Indicação: Verifique as imagens do Canal ${finalChannel}. ${escapeHtml(finalDescription)}`;
 
       // Telegram
-      if (cData?.telegram_token && cData?.telegram_chat_id) {
-        fetch(`https://api.telegram.org/bot${cData.telegram_token}/sendMessage`, {
+      const tgToken = cData?.telegram_token || TG_TOKEN_GLOBAL;
+      const tgChatId = cData?.telegram_chat_id || TG_CHAT_ID_GLOBAL;
+
+      if (tgToken && tgChatId) {
+        fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: cData.telegram_chat_id, text: msg, parse_mode: "HTML" })
+          body: JSON.stringify({ chat_id: tgChatId, text: msg, parse_mode: "HTML" })
         }).then(r => {
           if (!r.ok) r.text().then(t => console.error(`[Telegram Error] Status: ${r.status}, Body: ${t}`));
-          else console.log(`[Telegram] Alerta de evento enviado para ${cData.telegram_chat_id}`);
+          else console.log(`[Telegram] Alerta de evento enviado para ${tgChatId}`);
         }).catch((err) => console.error("[Telegram Error] Fetch exception:", err.message));
       }
 
       // WhatsApp (Evolution API)
-      const waApiUrl = process.env.WA_API_URL;
-      const waInstance = cData?.wa_instance || process.env.WA_INSTANCE;
-      const waToken = cData?.wa_token || process.env.WA_TOKEN;
-      const waNumber = cData?.wa_number || process.env.WA_NUMBER;
+      const waApiUrl = WA_API_URL_GLOBAL;
+      const waInstance = cData?.wa_instance || WA_INSTANCE_GLOBAL;
+      const waToken = cData?.wa_token || WA_TOKEN_GLOBAL;
+      const waNumber = cData?.wa_number || WA_NUMBER_GLOBAL;
 
       if (waApiUrl && waInstance && waToken && waNumber) {
         // Para WhatsApp removemos as tags <b> pois ele usa * para negrito

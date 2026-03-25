@@ -1,4 +1,4 @@
-import os, time, logging, smtplib, requests, datetime, subprocess, html
+import os, time, logging, smtplib, requests, datetime, subprocess, html, re
 from email.mime.text import MIMEText
 from contextlib import contextmanager
 import psycopg2
@@ -15,20 +15,22 @@ ALERT_COOLDOWN  = int(os.getenv("ALERT_COOLDOWN", "120"))
 PING_TIMEOUT    = int(os.getenv("PING_TIMEOUT", "3"))
 PING_COUNT      = int(os.getenv("PING_COUNT", "1"))
 
+def sanitize(val): return re.sub(r'["\'`\s]', '', val) if val else ""
+
 # Telegram/Email globais (superadmin)
-TG_TOKEN    = os.getenv("TELEGRAM_TOKEN", "")
-TG_CHAT_ID  = os.getenv("TELEGRAM_CHAT_ID", "")
-SMTP_HOST   = os.getenv("SMTP_HOST", "")
+TG_TOKEN    = sanitize(os.getenv("TELEGRAM_TOKEN", ""))
+TG_CHAT_ID  = sanitize(os.getenv("TELEGRAM_CHAT_ID", ""))
+SMTP_HOST   = sanitize(os.getenv("SMTP_HOST", ""))
 SMTP_PORT   = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER   = os.getenv("SMTP_USER", "")
-SMTP_PASS   = os.getenv("SMTP_PASS", "")
-ALERT_EMAIL = os.getenv("ALERT_EMAIL", "")
+SMTP_USER   = sanitize(os.getenv("SMTP_USER", ""))
+SMTP_PASS   = sanitize(os.getenv("SMTP_PASS", ""))
+ALERT_EMAIL = sanitize(os.getenv("ALERT_EMAIL", ""))
 
 # WhatsApp (Evolution API) globais
-WA_INSTANCE = os.getenv("WA_INSTANCE", "")
-WA_TOKEN    = os.getenv("WA_TOKEN", "")
-WA_NUMBER   = os.getenv("WA_NUMBER", "")
-WA_API_URL  = os.getenv("WA_API_URL", "").replace(/["'`\s]/g, "") # Sanitiza a URL da Evolution
+WA_INSTANCE = sanitize(os.getenv("WA_INSTANCE", ""))
+WA_TOKEN    = sanitize(os.getenv("WA_TOKEN", ""))
+WA_NUMBER   = sanitize(os.getenv("WA_NUMBER", ""))
+WA_API_URL  = sanitize(os.getenv("WA_API_URL", ""))
 
 device_online_state = {}
 alert_cooldown_map  = {}
