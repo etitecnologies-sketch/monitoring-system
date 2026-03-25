@@ -78,6 +78,13 @@ async function initDB() {
           cpu FLOAT DEFAULT 0, memory FLOAT DEFAULT 0, disk_percent FLOAT DEFAULT 0,
           latency_ms FLOAT DEFAULT 0, status TEXT DEFAULT 'online'
       );
+      CREATE TABLE IF NOT EXISTS events (
+          id BIGSERIAL PRIMARY KEY, time TIMESTAMPTZ DEFAULT NOW(),
+          device_id INT REFERENCES devices(id) ON DELETE CASCADE,
+          event_type TEXT NOT NULL, channel INT DEFAULT 0,
+          description TEXT, severity TEXT DEFAULT 'info',
+          is_read BOOLEAN DEFAULT FALSE
+      );
     `);
     
     const migrations = [
@@ -87,7 +94,8 @@ async function initDB() {
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}'",
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_agent BOOLEAN DEFAULT TRUE",
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_ping BOOLEAN DEFAULT TRUE",
-      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_snmp BOOLEAN DEFAULT FALSE"
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_snmp BOOLEAN DEFAULT FALSE",
+      "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS disk_percent FLOAT DEFAULT 0"
     ];
     for (let m of migrations) { await pool.query(m).catch(() => {}); }
     console.log("Database Professional Restore: OK");
@@ -298,6 +306,67 @@ app.get("/alerts", auth, async (req, res) => {
   query += " ORDER BY m.time DESC LIMIT 50";
   const r = await pool.query(query, params);
   res.json(r.rows.map(row => ({ ...row, alert_type: 'offline' })));
+});
+
+// ── PUSH UNIVERSAL (Recepcionista Cloud) ─────────────────────
+app.post("/push", metricsLimiter, async (req, res) => {
+  const token = req.headers["x-device-token"] || req.body.token;
+  const { 
+    status, cpu, memory, disk, latency, 
+    event_type, channel, description, severity 
+  } = req.body;
+
+  if (!token) return res.status(401).json({ error: "Token required" });
+
+  try {
+    const dr = await pool.query("SELECT id, client_id, name FROM devices WHERE token=$1", [token]);
+    if (dr.rows.length === 0) return res.status(401).json({ error: "Invalid token" });
+    const dev = dr.rows[0];
+
+    // 1. Atualizar Status e Telemetria de Hardware
+    await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", [status || "online", dev.id]);
+    
+    // Grava métricas de performance se enviadas
+    if (cpu !== undefined || memory !== undefined || disk !== undefined) {
+      await pool.query(`
+        INSERT INTO metrics (time, host, device_id, cpu, memory, disk_percent, latency_ms, status)
+        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+      `, [dev.name, dev.id, cpu || 0, memory || 0, disk || 0, latency || 0, status || "online"]);
+    }
+
+    // 2. Registrar Eventos de Analíticos (Movimento, Pessoas, etc.)
+    if (event_type) {
+      await pool.query(`
+        INSERT INTO events (device_id, event_type, channel, description, severity)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [dev.id, event_type, channel || 0, description || "", severity || "info"]);
+      
+      console.log(`[Push] Evento recebido: ${event_type} no canal ${channel} do dispositivo ${dev.name}`);
+    }
+
+    // 3. Notificar via WebSocket (Tempo Real)
+    if (WEBSOCKET_URL) {
+      fetch(`${WEBSOCKET_URL}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: event_type ? "EVENT" : "METRIC",
+          device_id: dev.id,
+          client_id: dev.client_id,
+          name: dev.name,
+          status: status || "online",
+          cpu, memory, disk, latency,
+          event: event_type ? { type: event_type, channel, description, severity } : null,
+          time: new Date().toISOString()
+        }),
+      }).catch(() => {});
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[Push Error]:", e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post("/metrics", metricsLimiter, async (req, res) => {
