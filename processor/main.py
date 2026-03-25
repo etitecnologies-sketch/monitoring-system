@@ -324,7 +324,7 @@ def check_offline_devices(cur, conn):
     # Isso garante que câmeras Push/TCP sejam alertadas mesmo que o usuário esqueça o flag de agente
     cur.execute("SELECT id,name,hostname,last_seen,status,device_type,tags,client_id,mac_address,serial_number,monitor_agent FROM devices")
     rows = cur.fetchall()
-    # logger.info(f"Checking offline status for {len(rows)} devices...") # Log excessivo, mas útil se nada estiver acontecendo
+    logger.info(f"Monitorando status offline para {len(rows)} dispositivos...")
     
     for row in rows:
         dev_id,dev_name,hostname,last_seen,status,dtype,tags,client_id,mac,sn,agent_enabled=row
