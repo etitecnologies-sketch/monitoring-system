@@ -113,6 +113,64 @@ async function initDB() {
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS serial_number TEXT DEFAULT ''"
     ];
     for (let m of migrations) { await pool.query(m).catch(() => {}); }
+    
+    // Inicia tabelas solares se não existirem
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS solar_inverters (
+          id              SERIAL PRIMARY KEY,
+          client_id       INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+          name            TEXT NOT NULL,
+          brand           TEXT NOT NULL,
+          model           TEXT DEFAULT '',
+          location        TEXT DEFAULT '',
+          capacity_kwp    FLOAT DEFAULT 0,
+          tariff_kwh      FLOAT DEFAULT 0.85,
+          status          TEXT DEFAULT 'active',
+          growatt_user    TEXT DEFAULT '',
+          growatt_pass    TEXT DEFAULT '',
+          growatt_plant_id TEXT DEFAULT '',
+          fronius_ip      TEXT DEFAULT '',
+          fronius_device_id INTEGER DEFAULT 1,
+          solarman_token  TEXT DEFAULT '',
+          solarman_app_id TEXT DEFAULT '',
+          solarman_logger_sn TEXT DEFAULT '',
+          sma_user        TEXT DEFAULT '',
+          sma_pass        TEXT DEFAULT '',
+          sma_plant_id    TEXT DEFAULT '',
+          goodwe_user     TEXT DEFAULT '',
+          goodwe_pass     TEXT DEFAULT '',
+          goodwe_station_id TEXT DEFAULT '',
+          huawei_user     TEXT DEFAULT '',
+          huawei_pass     TEXT DEFAULT '',
+          huawei_station_id TEXT DEFAULT '',
+          api_url         TEXT DEFAULT '',
+          api_key         TEXT DEFAULT '',
+          api_type        TEXT DEFAULT '',
+          notes           TEXT DEFAULT '',
+          created_at      TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS solar_metrics (
+          time            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          inverter_id     INTEGER REFERENCES solar_inverters(id) ON DELETE CASCADE,
+          client_id       INTEGER REFERENCES clients(id),
+          power_w         FLOAT DEFAULT 0,
+          energy_today_kwh FLOAT DEFAULT 0,
+          energy_month_kwh FLOAT DEFAULT 0,
+          energy_total_kwh FLOAT DEFAULT 0,
+          voltage_pv      FLOAT DEFAULT 0,
+          voltage_ac      FLOAT DEFAULT 0,
+          current_ac      FLOAT DEFAULT 0,
+          frequency_hz    FLOAT DEFAULT 50,
+          temperature_c   FLOAT DEFAULT 0,
+          revenue_today   FLOAT DEFAULT 0,
+          revenue_month   FLOAT DEFAULT 0,
+          revenue_total   FLOAT DEFAULT 0,
+          inverter_status TEXT DEFAULT 'unknown',
+          fault_code      TEXT DEFAULT '',
+          last_update     TIMESTAMPTZ DEFAULT NOW()
+      );
+    `).catch(e => console.log("Solar Tables Error:", e.message));
+
     console.log("Database Professional Restore: OK");
   } catch (e) { console.error("DB Restore Error:", e.message); }
 }
@@ -246,6 +304,78 @@ app.put("/devices/:id", auth, async (req, res) => {
 
 app.delete("/devices/:id", auth, async (req, res) => {
   await pool.query("DELETE FROM devices WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
+});
+
+// ── Solar Inverters ──────────────────────────────────────────
+app.get("/solar/inverters", auth, async (req, res) => {
+  try {
+    const cid = clientFilter(req);
+    let query = "SELECT * FROM solar_inverters WHERE 1=1";
+    const params = [];
+    if (cid) { params.push(cid); query += " AND client_id=$1"; }
+    const r = await pool.query(query, params);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/solar/inverters", auth, async (req, res) => {
+  const { name, brand, model, location, capacity_kwp, tariff_kwh, client_id, notes, ...creds } = req.body;
+  const cid = req.user.role === "superadmin" ? (client_id || null) : req.user.client_id;
+  try {
+    const r = await pool.query(`
+      INSERT INTO solar_inverters (
+        name, brand, model, location, capacity_kwp, tariff_kwh, client_id, notes,
+        growatt_user, growatt_pass, growatt_plant_id,
+        fronius_ip, fronius_device_id,
+        solarman_token, solarman_app_id, solarman_logger_sn,
+        sma_user, sma_pass, sma_plant_id,
+        goodwe_user, goodwe_pass, goodwe_station_id,
+        huawei_user, huawei_pass, huawei_station_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+      RETURNING *
+    `, [
+      name, brand, model||"", location||"", parseFloat(capacity_kwp)||0, parseFloat(tariff_kwh)||0.85, cid, notes||"",
+      creds.growatt_user||"", creds.growatt_pass||"", creds.growatt_plant_id||"",
+      creds.fronius_ip||"", parseInt(creds.fronius_device_id)||1,
+      creds.solarman_token||"", creds.solarman_app_id||"", creds.solarman_logger_sn||"",
+      creds.sma_user||"", creds.sma_pass||"", creds.sma_plant_id||"",
+      creds.goodwe_user||"", creds.goodwe_pass||"", creds.goodwe_station_id||"",
+      creds.huawei_user||"", creds.huawei_pass||"", creds.huawei_station_id||""
+    ]);
+    res.status(201).json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put("/solar/inverters/:id", auth, async (req, res) => {
+  const { name, brand, model, location, capacity_kwp, tariff_kwh, notes, ...creds } = req.body;
+  try {
+    const r = await pool.query(`
+      UPDATE solar_inverters SET
+        name=$1, brand=$2, model=$3, location=$4, capacity_kwp=$5, tariff_kwh=$6, notes=$7,
+        growatt_user=$8, growatt_pass=$9, growatt_plant_id=$10,
+        fronius_ip=$11, fronius_device_id=$12,
+        solarman_token=$13, solarman_app_id=$14, solarman_logger_sn=$15,
+        sma_user=$16, sma_pass=$17, sma_plant_id=$18,
+        goodwe_user=$19, goodwe_pass=$20, goodwe_station_id=$21,
+        huawei_user=$22, huawei_pass=$23, huawei_station_id=$24
+      WHERE id=$25 RETURNING *
+    `, [
+      name, brand, model||"", location||"", parseFloat(capacity_kwp)||0, parseFloat(tariff_kwh)||0.85, notes||"",
+      creds.growatt_user||"", creds.growatt_pass||"", creds.growatt_plant_id||"",
+      creds.fronius_ip||"", parseInt(creds.fronius_device_id)||1,
+      creds.solarman_token||"", creds.solarman_app_id||"", creds.solarman_logger_sn||"",
+      creds.sma_user||"", creds.sma_pass||"", creds.sma_plant_id||"",
+      creds.goodwe_user||"", creds.goodwe_pass||"", creds.goodwe_station_id||"",
+      creds.huawei_user||"", creds.huawei_pass||"", creds.huawei_station_id||"",
+      req.params.id
+    ]);
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/solar/inverters/:id", auth, async (req, res) => {
+  await pool.query("DELETE FROM solar_inverters WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
 });
 
