@@ -124,8 +124,14 @@ function DeviceModal({ device, onClose, onSave }) {
                 </div>
                 <div style={S.formGroup}><label style={S.label}>Tags</label><input style={S.input} value={tags} onChange={e=>setTags(e.target.value)} placeholder="Ex: porto, dvr" /></div>
                 <div style={S.formGroup}><label style={S.label}>Localização</label><input style={S.input} value={loc} onChange={e=>setLoc(e.target.value)} /></div>
-                <div style={S.formGroup}><label style={S.label}>MAC Address</label><input style={S.input} value={mac} onChange={e=>setMac(e.target.value)} placeholder="00:11:22:33:44:55" /></div>
-                <div style={S.formGroup}><label style={S.label}>Serial Number (SN)</label><input style={S.input} value={sn} onChange={e=>setSn(e.target.value)} placeholder="SN123456789" /></div>
+                <div style={{...S.formGroup, border: "1px solid #6366f155", padding: "10px", borderRadius: "12px", background: "#6366f105"}}>
+                  <label style={{...S.label, color: "#818cf8"}}>🆔 MAC Address</label>
+                  <input style={S.input} value={mac} onChange={e=>setMac(e.target.value)} placeholder="00:11:22:33:44:55" />
+                </div>
+                <div style={{...S.formGroup, border: "1px solid #a78bfa55", padding: "10px", borderRadius: "12px", background: "#a78bfa05"}}>
+                  <label style={{...S.label, color: "#c084fc"}}>🏷️ Serial Number (SN)</label>
+                  <input style={S.input} value={sn} onChange={e=>setSn(e.target.value)} placeholder="SN123456789" />
+                </div>
               </div>
               <div>
                 <div style={S.formGroup}><label style={S.label}>DDNS / DNS (Remoto)</label><input style={S.input} value={ddns} onChange={e=>setDdns(e.target.value)} placeholder="ex: camera.ddns-intelbras.com.br" /></div>
