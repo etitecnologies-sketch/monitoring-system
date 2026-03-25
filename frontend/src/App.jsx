@@ -11,9 +11,11 @@ function useIsMobile() {
   return isMobile;
 }
 
-const rawApiBase = import.meta.env.VITE_API_URL || "";
+const rawApiBase = new URLSearchParams(window.location.search).get("fallback_api") 
+  ? atob(new URLSearchParams(window.location.search).get("fallback_api"))
+  : (import.meta.env.VITE_API_URL || "");
+
 // ── DETECÇÃO AGRESSIVA DA API ──
-// Esta lógica ignora falhas de configuração e tenta achar a API de qualquer jeito
 let API = rawApiBase.replace(/["']/g, "").trim();
 
 if (!API || API === "/" || API.length < 5) {
@@ -369,6 +371,15 @@ function AuthPage({ onLogin }) {
       } catch (e) {
         clearTimeout(diagTimer);
         console.error("[App] API Connection Error:", e);
+        
+        // Se a API falhou e estamos no Railway, tenta um FALLBACK imediato para o domínio atual
+        if (window.location.hostname.includes("railway.app") && !API.includes(window.location.hostname)) {
+           console.log("[App] Tentando Fallback para o domínio atual...");
+           const fallbackAPI = window.location.origin.replace("frontend", "ingest-api");
+           window.location.href = `${window.location.origin}?fallback_api=${btoa(fallbackAPI)}`;
+           return;
+        }
+
         const errorMsg = e.message || (typeof e === 'string' ? e : "Erro de conexão");
         setErr(
           <span>
