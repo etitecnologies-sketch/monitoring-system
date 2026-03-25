@@ -524,4 +524,6 @@ async function cloudMonitor(deviceId = null) {
 setInterval(cloudMonitor, 60000);
 
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
-app.listen(process.env.PORT || 3000, "0.0.0.0", () => console.log("Professional API RESTORED"));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, "0.0.0.0", () => console.log(`Professional API RESTORED on port ${PORT}`));
