@@ -571,6 +571,69 @@ async function cloudMonitor(deviceId = null) {
 setInterval(cloudMonitor, 60000);
 
 const PORT = process.env.PORT || 3000;
+const TCP_PORT = 3001; // Porta para o Registro Automático da Intelbras
+
+// ── Servidor TCP para Registro Automático (Protocolo Binário Intelbras) ──
+const tcpServer = net.createServer((socket) => {
+  const remoteAddr = socket.remoteAddress;
+  console.log(`[TCP] Nova conexão de: ${remoteAddr}`);
+
+  socket.on("data", async (data) => {
+    try {
+      // Converte o buffer em string para procurar o Serial Number ou MAC
+      const rawData = data.toString("utf8");
+      const hexData = data.toString("hex").toUpperCase();
+      
+      console.log(`[TCP] Dados recebidos de ${remoteAddr}: ${rawData.substring(0, 50)}...`);
+
+      // Busca no banco por qualquer dispositivo que tenha o SN ou MAC presente nos dados binários
+      // O protocolo da Intelbras envia o SN em texto plano em algum momento
+      const devicesRes = await pool.query("SELECT id, name, serial_number, mac_address FROM devices");
+      
+      for (const dev of devicesRes.rows) {
+        const cleanMac = dev.mac_address ? dev.mac_address.replace(/[:-]/g, "").toUpperCase() : null;
+        
+        if ((dev.serial_number && rawData.includes(dev.serial_number)) || 
+            (cleanMac && hexData.includes(cleanMac))) {
+          
+          console.log(`[TCP] Dispositivo Identificado: ${dev.name} (${dev.serial_number || dev.mac_address})`);
+          
+          // Atualiza status para online
+          await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", ["online", dev.id]);
+          
+          // Notifica WebSocket
+          if (process.env.WEBSOCKET_URL) {
+            fetch(`${process.env.WEBSOCKET_URL}/publish`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                type: "METRIC",
+                device_id: dev.id,
+                name: dev.name,
+                status: "online",
+                time: new Date().toISOString()
+              }),
+            }).catch(() => {});
+          }
+          break; 
+        }
+      }
+    } catch (err) {
+      console.error("[TCP Error]:", err.message);
+    }
+  });
+
+  socket.on("error", (err) => console.error(`[TCP Socket Error]: ${err.message}`));
+  socket.setTimeout(120000); // 2 minutos de timeout
+  socket.on("timeout", () => socket.end());
+});
+
+tcpServer.listen(TCP_PORT, "0.0.0.0", () => {
+  console.log(`=========================================`);
+  console.log(`📡 TCP Proxy Online na Porta: ${TCP_PORT}`);
+  console.log(`=========================================`);
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`=========================================`);
   console.log(`🚀 NexusWatch API Online na Porta: ${PORT}`);
