@@ -362,11 +362,10 @@ def check_ping_devices(cur, conn):
                 f"Device '{dev_name}' ficou OFFLINE.\nAlvo: {target}\nÚltima Latência: {last_latency if last_latency else 0:.1f}ms\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_display()}", cl_email)
 
 def check_offline_devices(cur, conn):
-    # Usamos o relógio do BANCO DE DADOS (Postgres) para calcular a diferença.
-    # Isso elimina qualquer erro de fuso horário entre o Python e o Banco.
+    # Cálculo de tempo 100% dentro do Banco de Dados para evitar erro de fuso horário
     cur.execute("""
-        SELECT d.id, d.name, d.hostname, d.status, d.client_id, d.device_type, d.mac_address, d.serial_number,
-               EXTRACT(EPOCH FROM (NOW() - d.last_seen)) as seconds_silent,
+        SELECT d.id, d.name, d.status, d.client_id, d.hostname,
+               EXTRACT(EPOCH FROM (NOW() AT TIME ZONE 'UTC' - d.last_seen AT TIME ZONE 'UTC')) as seconds_silent,
                (SELECT latency_ms FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_latency
         FROM devices d
         WHERE d.last_seen IS NOT NULL
@@ -374,52 +373,42 @@ def check_offline_devices(cur, conn):
     rows = cur.fetchall()
     
     for row in rows:
-        dev_id, dev_name, hostname, db_status, client_id, dtype, mac, sn, seconds_silent, last_latency = row
+        dev_id, dev_name, db_status, client_id, hostname, seconds_silent, last_latency = row
         
-        # Se seconds_silent for None ou negativo (erro de relógio), tratamos como 0
-        silent = float(seconds_silent) if seconds_silent is not None else 0
+        # Se o sinal for do "futuro" (erro de sincronia), tratamos como 0
+        silent = max(0, float(seconds_silent)) if seconds_silent is not None else 0
         
-        # LOG OBRIGATÓRIO PARA DEBUG - Ver no console do Railway
-        print(f"[MONITOR] {dev_name} | Silêncio: {silent:.1f}s | Status: {db_status}")
+        # LOG DE TEMPO REAL NO CONSOLE DO RAILWAY
+        if silent > 3:
+            print(f"[CHECK] {dev_name} | Sem sinal há: {silent:.1f}s | Status Atual: {db_status}")
 
         is_offline = silent > OFFLINE_TIMEOUT
-        
-        # Mudança de estado: ONLINE -> OFFLINE
+
+        # DISPARAR QUEDA
         if is_offline and db_status != 'offline':
-            print(f"🚨🚨🚨 DISPARANDO QUEDA: {dev_name} (limite {OFFLINE_TIMEOUT}s atingido)")
+            print(f"🚨🚨🚨 DISPARANDO QUEDA: {dev_name} ({silent:.1f}s)")
             try:
-                # 1. Força status offline no DB
                 cur.execute("UPDATE devices SET status='offline' WHERE id=%s", (dev_id,))
-                # 2. Grava o alerta
                 cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id,fired_at) VALUES(%s,%s,'offline',1,0,'offline',%s,NOW())",(dev_id,hostname or dev_name,client_id))
-                # 3. Grava a métrica para o Dashboard (importante: status='offline')
                 cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,0,'offline')", (hostname or dev_name, dev_id))
                 conn.commit()
                 
-                # 4. Envia Notificações
+                # Notificações
                 tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
-                edev_name = escape_html(dev_name); ehostname = escape_html(hostname or dev_name)
-                mac_sn_str = f"MAC: {escape_html(mac)} | SN: {escape_html(sn)}\n" if mac or sn else ""
+                edev_name = escape_html(dev_name)
                 lat_str = f"<b>{last_latency if last_latency else 0:.1f}ms</b>"
-
                 msg=(f"❌ <b>{edev_name}</b>\n"
-                     f"Problema: Host <b>{ehostname}</b> está indisponível\n\n"
-                     f"Host: {edev_name}\n"
+                     f"Problema: Dispositivo INDISPONÍVEL\n\n"
                      f"Última Latência: {lat_str}\n"
                      f"Data do Evento: <b>{now_display()}</b>\n"
-                     f"{mac_sn_str}"
-                     +(f"Descrição: {escape_html(cl_name)}\n" if cl_name else "")
-                     +"Indicação: Verifique a conectividade ou alimentação do dispositivo.")
-                
+                     f"Indicação: Verifique a conexão física.")
                 send_telegram(msg, tg_tok, tg_cid)
                 send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
-            except Exception as e:
-                print(f"ERRO AO DISPARAR QUEDA: {e}")
-                conn.rollback()
+            except Exception as e: print(f"Erro Queda: {e}"); conn.rollback()
 
-        # Mudança de estado: OFFLINE -> ONLINE
+        # DISPARAR RETORNO
         elif not is_offline and db_status == 'offline':
-            print(f"✅✅✅ DISPARANDO RETORNO: {dev_name} (sinal recebido)")
+            print(f"✅✅✅ DISPARANDO RETORNO: {dev_name}")
             try:
                 cur.execute("UPDATE devices SET status='online' WHERE id=%s", (dev_id,))
                 cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,%s,'online')", (hostname or dev_name, dev_id, last_latency or 0))
@@ -427,19 +416,12 @@ def check_offline_devices(cur, conn):
                 
                 tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
                 edev_name = escape_html(dev_name)
-                lat_str = f"<b>{last_latency if last_latency else 0:.1f}ms</b>"
-
                 msg=(f"✅ <b>{edev_name}</b>\n"
-                     f"Normalizado: Dispositivo voltou a se comunicar\n\n"
-                     f"Host: {edev_name}\n"
-                     f"Latência Atual: {lat_str}\n"
+                     f"Normalizado: Conexão RESTABELECIDA\n\n"
                      f"Data da Normalização: <b>{now_display()}</b>\n")
-                
                 send_telegram(msg, tg_tok, tg_cid)
                 send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
-            except Exception as e:
-                print(f"ERRO AO DISPARAR RETORNO: {e}")
-                conn.rollback()
+            except Exception as e: print(f"Erro Retorno: {e}"); conn.rollback()
 
 def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None,client_id=None):
     if is_in_cooldown(host,expr): return
@@ -594,11 +576,13 @@ def check_new_events(cur, conn):
             send_whatsapp(msg.replace("<b>", "*").replace("</b>", "*"), wa_inst, wa_tok, wa_num)
 
 def evaluate_once():
+    # Print de batimento cardíaco para provar que o script não travou
+    # print(f".", end="", flush=True) 
     with get_conn() as conn:
         cur=conn.cursor()
         check_ping_devices(cur,conn)
         check_offline_devices(cur,conn)
-        check_new_events(cur,conn) # Adicionado monitoramento de eventos analíticos
+        check_new_events(cur,conn)
         send_status_summary(cur)
         evaluate_triggers(cur,conn)
 
