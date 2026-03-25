@@ -28,7 +28,7 @@ def now_display():
 
 DATABASE_URL    = sanitize(os.environ.get("DATABASE_URL", ""))
 EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "1")) # Ciclo ultra-rápido: 1s
-OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "10")) # Timeout agressivo: 10s
+OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "30")) # Timeout mais equilibrado: 30s (ajustado de 10s para evitar alertas falsos)
 ALERT_COOLDOWN  = int(os.getenv("ALERT_COOLDOWN", "60"))
 PING_TIMEOUT    = int(os.getenv("PING_TIMEOUT", "2"))
 PING_COUNT      = int(os.getenv("PING_COUNT", "1"))
@@ -374,12 +374,12 @@ def check_ping_devices(cur, conn):
 def check_offline_devices(cur, conn):
     # 1. DETECÇÃO DE QUEDA POR TIMEOUT (Para Auto Registro / Push / Agent)
     # Marcar como OFFLINE quem sumiu há mais de 10s.
-    cur.execute("""
+    cur.execute(f"""
         UPDATE devices 
         SET status = 'offline'
         WHERE last_seen IS NOT NULL 
           AND status != 'offline'
-          AND (NOW() AT TIME ZONE 'UTC' - last_seen AT TIME ZONE 'UTC') > INTERVAL '10 seconds'
+          AND (NOW() AT TIME ZONE 'UTC' - last_seen AT TIME ZONE 'UTC') > INTERVAL '{OFFLINE_TIMEOUT} seconds'
         RETURNING id, name, client_id, device_type, mac_address, serial_number;
     """)
     dropped = cur.fetchall()
@@ -396,7 +396,7 @@ def check_offline_devices(cur, conn):
             
             msg=(f"❌ <b>{escape_html(dev_name)}</b>\n"
                  f"<b>DISPOSITIVO OFFLINE</b>\n"
-                 f"O sinal foi interrompido há mais de 10 segundos.\n\n"
+                 f"O sinal foi interrompido há mais de {OFFLINE_TIMEOUT} segundos.\n\n"
                  f"Data/Hora: <b>{now_display()}</b>\n"
                  f"Detalhes: {d_icon} {escape_html(dtype or 'other')}\n"
                  +(f"MAC: {escape_html(mac)}\n" if mac else "")
@@ -409,12 +409,12 @@ def check_offline_devices(cur, conn):
 
     # 2. DETECÇÃO DE RETORNO POR TIMEOUT (Para quem voltou a enviar last_seen mas estava offline)
     # Dispositivos que estão com status 'offline' mas o last_seen é menor que 10s
-    cur.execute("""
+    cur.execute(f"""
         UPDATE devices 
         SET status = 'online'
         WHERE status = 'offline'
           AND last_seen IS NOT NULL
-          AND (NOW() AT TIME ZONE 'UTC' - last_seen AT TIME ZONE 'UTC') < INTERVAL '10 seconds'
+          AND (NOW() AT TIME ZONE 'UTC' - last_seen AT TIME ZONE 'UTC') < INTERVAL '{OFFLINE_TIMEOUT} seconds'
         RETURNING id, name, client_id, device_type, mac_address, serial_number;
     """)
     recovered = cur.fetchall()

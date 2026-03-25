@@ -56,7 +56,7 @@ function HostCard({ host, data, deviceMap }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const device  = data.device_id ? deviceMap[data.device_id] : null;
-  const isOnline= data.time && (Date.now()-new Date(data.time))<30000;
+  const isOnline= data.status === "online" && data.time && (Date.now()-new Date(data.time))<60000;
   const cpu     = +(data.cpu||0).toFixed(1);
   const mem     = +(data.memory||0).toFixed(1);
   const disk    = +(data.disk_percent||0).toFixed(1);
