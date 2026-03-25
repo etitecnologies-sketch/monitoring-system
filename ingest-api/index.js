@@ -318,21 +318,31 @@ app.get("/alerts", auth, async (req, res) => {
 
 // ── PUSH UNIVERSAL (Recepcionista Cloud) ─────────────────────
 app.post("/push", metricsLimiter, async (req, res) => {
-  const token = req.headers["x-device-token"] || req.body.token;
+  // Tenta pegar o token de várias formas (Header, Body ou Query) para garantir compatibilidade com DVRs
+  const token = req.headers["x-device-token"] || req.body.token || req.query.token || req.body.ID;
   const { 
     status, cpu, memory, disk, latency, 
     event_type, channel, description, severity 
   } = req.body;
 
-  if (!token) return res.status(401).json({ error: "Token required" });
+  if (!token) {
+    console.log("[Push] Requisição sem Token recebida:", req.body);
+    return res.status(401).json({ error: "Token required" });
+  }
 
   try {
     const dr = await pool.query("SELECT id, client_id, name FROM devices WHERE token=$1", [token]);
-    if (dr.rows.length === 0) return res.status(401).json({ error: "Invalid token" });
+    if (dr.rows.length === 0) {
+      console.log(`[Push] Token inválido recebido: ${token}`);
+      return res.status(401).json({ error: "Invalid token" });
+    }
     const dev = dr.rows[0];
 
+    console.log(`[Push] Sinal recebido do dispositivo: ${dev.name} (${token.substring(0,8)}...)`);
+
     // 1. Atualizar Status e Telemetria de Hardware
-    await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", [status || "online", dev.id]);
+    // Se recebemos um sinal, o dispositivo está ONLINE
+    await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", ["online", dev.id]);
     
     // Grava métricas de performance se enviadas
     if (cpu !== undefined || memory !== undefined || disk !== undefined) {
