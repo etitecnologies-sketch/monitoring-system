@@ -2,9 +2,9 @@
 const rawApiBase = import.meta.env.VITE_API_URL || "";
 const rawWsUrl = import.meta.env.VITE_WS_URL || "";
 
-// Limpa aspas e espaços que podem vir do Railway
-const API_BASE = rawApiBase.replace(/["']/g, "").trim();
-const WS_URL = rawWsUrl.replace(/["']/g, "").trim() || 
+// Limpa aspas, crases e espaços que podem vir do Railway
+const API_BASE = rawApiBase.replace(/["'`\s]/g, "").trim().replace(/\/$/, "");
+const WS_URL = rawWsUrl.replace(/["'`\s]/g, "").trim().replace(/\/$/, "") || 
   (window.location.hostname === "localhost" ? "http://localhost:3001" : 
   `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}/socket.io`);
 
