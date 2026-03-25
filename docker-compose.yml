@@ -33,11 +33,13 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+      - "3002:3002"
     environment:
       DATABASE_URL: postgres://${DB_USER:-monitor}:${DB_PASSWORD:-changeme}@db:5432/${DB_NAME:-monitoring}
       WEBSOCKET_URL: http://websocket:3001
       JWT_SECRET: ${JWT_SECRET:-changeme-secret-jwt}
       PORT: 3000
+      TCP_PORT: 3002
     depends_on:
       db:
         condition: service_healthy

@@ -91,6 +91,7 @@ python main.py
 - **Frontend**: http://localhost (ou http://localhost:5173 em dev)
 - **API**: http://localhost:3000
 - **WebSocket**: http://localhost:3001
+- **TCP Proxy (Intelbras)**: Porta 3002 (TCP)
 
 ---
 
@@ -181,7 +182,7 @@ make restart          # Reinicia tudo
 
 1. **Variáveis de Ambiente**: Sempre configure `.env` antes de iniciar
 2. **Banco de Dados**: PostgreSQL deve estar disponível (via Docker ou instalado)
-3. **Ports**: Verifique se as portas 3000, 3001, 5432 estão livres
+3. **Ports**: Verifique se as portas 3000, 3001, 3002, 5432 estão livres
 4. **Permissões**: No Linux/macOS, pode precisar de `sudo` para Docker
 
 ---

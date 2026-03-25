@@ -778,7 +778,7 @@ async function cloudMonitor(deviceId = null) {
 // setInterval(cloudMonitor, 60000);
 
 const PORT = process.env.PORT || 3000;
-const TCP_PORT = 3001; // Porta para o Registro Automático da Intelbras
+const TCP_PORT = process.env.TCP_PORT || 3002; // Porta para o Registro Automático da Intelbras (Alterada de 3001 para 3002 para evitar conflito com WebSocket)
 
 // ── Servidor TCP para Registro Automático (Protocolo Binário Intelbras) ──
 const tcpServer = net.createServer((socket) => {

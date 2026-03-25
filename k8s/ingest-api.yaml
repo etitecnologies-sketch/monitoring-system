@@ -18,6 +18,7 @@ spec:
         image: yourrepo/ingest-api:latest
         ports:
         - containerPort: 3000
+        - containerPort: 3002
         env:
         - name: DATABASE_URL
           valueFrom:
@@ -26,6 +27,8 @@ spec:
               key: database-url
         - name: WEBSOCKET_URL
           value: "http://websocket:3001"
+        - name: TCP_PORT
+          value: "3002"
         resources:
           requests:
             cpu: "100m"
@@ -55,6 +58,10 @@ spec:
   selector:
     app: ingest-api
   ports:
-  - port: 80
+  - name: http
+    port: 80
     targetPort: 3000
+  - name: tcp-proxy
+    port: 3002
+    targetPort: 3002
   type: LoadBalancer
