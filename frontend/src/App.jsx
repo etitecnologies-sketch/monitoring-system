@@ -720,6 +720,7 @@ const EMPTY_DEVICE = {
   ip_address: "", tags: [], snmp_community: "public", snmp_version: "2c",
   ssh_user: "", ssh_port: 22, monitor_ping: true, monitor_snmp: false,
   monitor_agent: true, ddns_address: "", monitor_port: 0, notes: "", client_id: null,
+  mac_address: "", serial_number: "",
 };
 
 function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose }) {
@@ -778,6 +779,18 @@ function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose 
           <div style={S.fg}><label style={S.label}>Localização</label><input style={S.input} value={form.location} onChange={(e) => set("location", e.target.value)} placeholder="Bloco A / Rack 2" /></div>
         </div>
         <div style={S.fg}><label style={S.label}>Descrição</label><input style={S.input} value={form.description} onChange={(e) => set("description", e.target.value)} /></div>
+        
+        <div style={S.grid(2)}>
+          <div style={{...S.fg, border: "1px solid #38bdf833", padding: "10px", borderRadius: "8px", background: "rgba(56, 189, 248, 0.05)"}}>
+            <label style={{...S.label, color: "#38bdf8"}}>🆔 MAC Address</label>
+            <input style={S.input} value={form.mac_address} onChange={(e) => set("mac_address", e.target.value)} placeholder="00:11:22:33:44:55" />
+          </div>
+          <div style={{...S.fg, border: "1px solid #a78bfa33", padding: "10px", borderRadius: "8px", background: "rgba(167, 139, 250, 0.05)"}}>
+            <label style={{...S.label, color: "#a78bfa"}}>🏷️ Serial Number (SN)</label>
+            <input style={S.input} value={form.serial_number} onChange={(e) => set("serial_number", e.target.value)} placeholder="SN123456789" />
+          </div>
+        </div>
+
         <div style={S.fg}><label style={S.label}>Tags</label><TagInput value={form.tags} onChange={(v) => set("tags", v)} /></div>
 
         <div style={S.divider} />
@@ -935,6 +948,18 @@ function DevicesPage({ userRole, userClientId }) {
                 <span style={{ fontSize: 10, color: "#4a6080" }}>{d.ddns_address ? "DDNS" : "IP / VPN"}</span>
                 <span style={{ fontSize: 10, color: d.ddns_address ? "#38bdf8" : "#a78bfa", fontFamily: "monospace", fontWeight: 700 }}>{d.ddns_address || d.ip_address || "—"}</span>
               </div>
+              
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "8px", marginBottom: "8px" }}>
+                <div style={{ background: "rgba(56, 189, 248, 0.05)", padding: "6px", borderRadius: "6px", border: "1px solid rgba(56, 189, 248, 0.1)" }}>
+                  <span style={{ fontSize: "8px", color: "#38bdf8", display: "block", textTransform: "uppercase" }}>MAC Address</span>
+                  <span style={{ fontSize: "11px", color: "#fff", fontWeight: "600", fontFamily: "monospace" }}>{d.mac_address || "---"}</span>
+                </div>
+                <div style={{ background: "rgba(167, 139, 250, 0.05)", padding: "6px", borderRadius: "6px", border: "1px solid rgba(167, 139, 250, 0.1)" }}>
+                  <span style={{ fontSize: "8px", color: "#a78bfa", display: "block", textTransform: "uppercase" }}>Serial Number</span>
+                  <span style={{ fontSize: "11px", color: "#fff", fontWeight: "600", fontFamily: "monospace" }}>{d.serial_number || "---"}</span>
+                </div>
+              </div>
+
               {d.monitor_port > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                   <span style={{ fontSize: 10, color: "#4a6080" }}>PORTA</span>
@@ -1885,6 +1910,7 @@ export default function App() {
         <div style={S.logo}>
           <div style={{ fontSize: 22, marginBottom: 4 }}>📡</div>
           <div style={S.logoTitle}>NexusWatch Pro</div>
+          <div style={{...S.logoSub, color: "#38bdf8", fontWeight: "bold"}}>🚀 v1.0.3 (CACHE FIXED)</div>
           <div style={S.logoSub}>{isSuperAdmin ? "⚡ Superadmin" : "👤 Cliente"}</div>
         </div>
 
