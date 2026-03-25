@@ -551,6 +551,14 @@ setInterval(cloudMonitor, 60000);
 
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
 
+// Middleware para aceitar conexões de Auto Registro que podem vir com formatos variados
+app.use((req, res, next) => {
+  if (req.url === '/' && req.method === 'POST' && (req.body.ID || req.body.token)) {
+    req.url = '/push'; // Redireciona auto registro raiz para o endpoint push
+  }
+  next();
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`=========================================`);
