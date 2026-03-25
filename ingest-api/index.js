@@ -311,9 +311,28 @@ app.delete("/devices/:id", auth, async (req, res) => {
 app.get("/solar/inverters", auth, async (req, res) => {
   try {
     const cid = clientFilter(req);
-    let query = "SELECT * FROM solar_inverters WHERE 1=1";
+    let query = `
+      SELECT 
+        si.*,
+        c.name as client_name,
+        sm.power_w as last_power,
+        sm.energy_today_kwh as last_energy_today,
+        sm.energy_total_kwh as last_energy_total,
+        sm.revenue_today as last_revenue_today,
+        sm.revenue_total as last_revenue_total,
+        sm.inverter_status as last_status,
+        sm.time as last_update
+      FROM solar_inverters si
+      LEFT JOIN clients c ON si.client_id = c.id
+      LEFT JOIN LATERAL (
+        SELECT * FROM solar_metrics 
+        WHERE inverter_id = si.id 
+        ORDER BY time DESC LIMIT 1
+      ) sm ON true
+      WHERE 1=1
+    `;
     const params = [];
-    if (cid) { params.push(cid); query += " AND client_id=$1"; }
+    if (cid) { params.push(cid); query += " AND si.client_id=$1"; }
     const r = await pool.query(query, params);
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
