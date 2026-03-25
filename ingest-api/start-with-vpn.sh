@@ -10,8 +10,9 @@ if [ -n "$TAILSCALE_AUTHKEY" ]; then
     (
       sleep 5
       echo "Autenticando no Tailscale em background..."
-      tailscale --socket=/tmp/tailscaled.sock up --authkey=$TAILSCALE_AUTHKEY --hostname=nexuswatch-api --accept-routes
-      echo "API Conectada à Rede Privada Tailscale!"
+      # --socks5-server=1055 é essencial para o Node.js falar com a rede local
+    tailscale --socket=/tmp/tailscaled.sock up --authkey=$TAILSCALE_AUTHKEY --hostname=nexuswatch-api --accept-routes --socks5-server=1055
+    echo "API Conectada à Rede Privada Tailscale com Proxy SOCKS5!"
     ) &
 else
     echo "Aviso: TAILSCALE_AUTHKEY não definida. Rodando sem VPN..."
