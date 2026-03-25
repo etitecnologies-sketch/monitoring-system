@@ -381,135 +381,67 @@ def collect_goodwe(inv):
 
 # ── HUAWEI (FusionSolar) ──────────────────────────────────────
 def collect_huawei(inv):
-    """Coleta dados Huawei via FusionSolar — autenticacao via API northbound com conta owner"""
+    """Coleta dados Huawei via FusionSolar — suporte a redirecionamento regional e limpeza de ID"""
     try:
         user = inv.get("huawei_user", "")
         pwd  = inv.get("huawei_pass", "")
-        if not user or not pwd: return None
+        station_id = str(inv.get("huawei_station_id", "")).replace("NE=", "").strip()
+        
+        if not user or not pwd or not station_id: return None
 
-        station_id = inv.get("huawei_station_id", "")
-        if not station_id:
-            logger.error(f"Huawei: station_id nao configurado [{inv['name']}]")
-            return None
-
-        BASE = "https://intl.fusionsolar.huawei.com"
-
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-            "Referer": f"{BASE}/",
-            "Origin": BASE,
-        })
-
-        # Passo 1: pegar token CSRF da pagina inicial
-        try:
-            r0 = session.get(f"{BASE}/", timeout=10)
-            xsrf = session.cookies.get("XSRF-TOKEN", "")
-            if xsrf:
-                session.headers.update({"X-XSRF-TOKEN": xsrf})
-        except Exception as e:
-            logger.debug(f"Huawei get home: {e}")
-
-        # Passo 2: login via endpoint de autenticacao web
-        login_payload = {
-            "username": user,
-            "password": pwd,
-            "clientObject": {
-                "clientType": "WEB",
-                "lang": "pt_BR"
-            }
-        }
-
-        r = session.post(
-            f"{BASE}/rest/neteco/web/sequence/v2/user/login",
-            json=login_payload,
-            timeout=15,
-        )
-
-        # Se retornou HTML, tentar endpoint alternativo
-        if r.headers.get("Content-Type","").startswith("text/html"):
-            r = session.post(
-                f"{BASE}/rest/dpcloud/auth/v1/wolverine/login",
-                json={"username": user, "password": pwd},
-                timeout=15,
-            )
-
-        try:
-            login_json = r.json()
-        except Exception:
-            logger.error(f"Huawei login resposta invalida [{inv['name']}]: {r.text[:200]}")
-            return None
-
-        # Verificar sucesso — diferentes endpoints usam campos diferentes
-        success = (
-            login_json.get("success") == True or
-            login_json.get("errorCode") in (None, "0", 0, "") or
-            login_json.get("code") in ("0", 0, "200", 200) or
-            "token" in str(login_json).lower() or
-            r.status_code == 200 and not login_json.get("errorMsg")
-        )
-
-        if not success:
-            err = login_json.get("errorMsg") or login_json.get("message") or login_json.get("errorCode") or str(login_json)[:200]
-            logger.error(f"Huawei login falhou [{inv['name']}]: {err}")
-            return None
-
-        # Atualizar CSRF apos login
-        xsrf = session.cookies.get("XSRF-TOKEN", session.headers.get("X-XSRF-TOKEN",""))
-        if xsrf:
-            session.headers.update({"X-XSRF-TOKEN": xsrf})
-
-        # Passo 3: buscar dados da usina — tentar varios endpoints
-        endpoints = [
-            (f"{BASE}/rest/pvms/web/station/v1/overview/energy-flow", {"stationDn": station_id}),
-            (f"{BASE}/rest/pvms/web/station/v1/overview/base-kpi", {"stationDn": station_id}),
-            (f"{BASE}/rest/pvms/web/station/v1/overview/power-curve", {"stationDn": station_id, "timeDimension": 0}),
+        # Lista de servidores regionais da Huawei (tentamos o internacional primeiro)
+        REGIONS = [
+            "https://intl.fusionsolar.huawei.com",
+            "https://la5.fusionsolar.huawei.com",
+            "https://region01eu5.fusionsolar.huawei.com",
+            "https://region02eu5.fusionsolar.huawei.com"
         ]
 
-        flow = {}
-        for url, payload in endpoints:
+        for BASE in REGIONS:
             try:
-                r2 = session.post(url, json=payload, timeout=15)
-                if r2.headers.get("Content-Type","").startswith("text/html"):
-                    continue
-                d2 = r2.json()
-                data = d2.get("data", {}) or {}
-                if data:
-                    flow = data
-                    logger.debug(f"Huawei dados de {url}: {list(data.keys())}")
-                    break
+                session = requests.Session()
+                session.headers.update({
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                })
+
+                # Login
+                login_payload = {"userName": user, "systemCode": pwd} # Formato da API Northbound
+                r = session.post(f"{BASE}/rest/openapi/login", json=login_payload, timeout=15)
+                
+                if r.status_code == 200:
+                    token = r.json().get("data")
+                    if token:
+                        session.headers.update({"XSRF-TOKEN": token})
+                        
+                        # Buscar dados da usina
+                        r2 = session.post(f"{BASE}/rest/openapi/pvms/v1/station/get-station-real-kpi", 
+                                         json={"stationCodes": station_id}, timeout=15)
+                        
+                        if r2.status_code == 200:
+                            data_list = r2.json().get("data", [])
+                            if data_list:
+                                flow = data_list[0]
+                                power_kw = float(flow.get("activePower", 0) or 0)
+                                energy_today = float(flow.get("dayPower", 0) or 0)
+                                energy_total = float(flow.get("totalPower", 0) or 0)
+                                
+                                status = "generating" if power_kw > 0 else ("idle" if is_daytime() else "offline")
+                                logger.info(f"Huawei OK ({BASE}) [{inv['name']}]: {power_kw*1000:.0f}W")
+                                return {
+                                    "power_w": power_kw * 1000,
+                                    "energy_today_kwh": energy_today,
+                                    "energy_total_kwh": energy_total,
+                                    "status": status
+                                }
             except Exception as e:
-                logger.debug(f"Huawei endpoint {url}: {e}")
+                logger.debug(f"Huawei Region {BASE} failed: {e}")
                 continue
-
-        if not flow:
-            logger.error(f"Huawei: nenhum endpoint retornou dados [{inv['name']}]")
-            return None
-
-        # Tentar varios nomes de campos (diferentes endpoints usam nomes diferentes)
-        power_kw     = float(flow.get("productPower", flow.get("realTimePower", flow.get("activePower", 0))) or 0)
-        power_w      = power_kw * 1000
-        energy_today = float(flow.get("dailyEnergy", flow.get("dayPower", flow.get("todayEnergy", 0))) or 0)
-        energy_month = float(flow.get("monthEnergy", flow.get("monthPower", 0)) or 0)
-        energy_total = float(flow.get("cumulativeEnergy", flow.get("totalEnergy", flow.get("totalPower", 0))) or 0)
-
-        if power_w > 0:        status = "generating"
-        elif is_daytime():     status = "idle"
-        else:                  status = "offline"
-
-        logger.info(f"Huawei OK [{inv['name']}]: {power_w:.0f}W | {energy_today:.2f}kWh hoje")
-        return {
-            "power_w": power_w,
-            "energy_today_kwh": energy_today,
-            "energy_month_kwh": energy_month,
-            "energy_total_kwh": energy_total,
-            "status": status,
-        }
+        
+        return None
     except Exception as e:
-        logger.error(f"Huawei error [{inv['name']}]: {e}")
+        logger.error(f"Huawei major error [{inv['name']}]: {e}")
         return None
 
 
