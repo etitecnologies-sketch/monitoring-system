@@ -341,10 +341,10 @@ app.get("/device-types", auth, (req, res) => res.json([
   { value: "other", label: "Outro", icon: "📦" }
 ]));
 
-// ── Cloud Monitor Logic ──────────────────────────────────────
+// ── Cloud Monitor Logic (SSTP/VPN Support) ─────────────────
 async function cloudMonitor(deviceId = null) {
   try {
-    // Busca dispositivos que tenham DDNS OU um IP que pareça ser de VPN (ex: 10.x.x.x, 172.16.x.x, 192.168.x.x)
+    // Busca dispositivos que tenham DDNS OU um IP de VPN (incluindo SSTP Legado)
     const query = deviceId ? 
       ["SELECT * FROM devices WHERE id=$1", [deviceId]] : 
       ["SELECT * FROM devices WHERE (ddns_address != '' AND monitor_port > 0) OR (ip_address != '' AND monitor_port > 0)", []];
@@ -354,23 +354,21 @@ async function cloudMonitor(deviceId = null) {
     for (const dev of r.rows) {
       const start = Date.now();
       const socket = new net.Socket();
-      socket.setTimeout(5000);
+      socket.setTimeout(8000); // Aumentado para 8s para VPNs legadas
 
       const targetHost = dev.ddns_address || dev.ip_address;
       if (!targetHost || !dev.monitor_port) continue;
 
       const updateStatus = async (status, latency = 0, error = null) => {
         socket.destroy();
-        const isVpn = !dev.ddns_address && dev.ip_address;
-        const notePrefix = isVpn ? "VPN " : "Cloud ";
+        const isVpn = !dev.ddns_address && (dev.ip_address.startsWith("10.") || dev.ip_address.startsWith("100."));
+        const notePrefix = isVpn ? "🛡️ VPN " : "☁️ Cloud ";
         
         await pool.query("UPDATE devices SET status=$1, last_seen=NOW(), notes=$2 WHERE id=$3", [status, error ? `${notePrefix}Error: ${error}` : `${notePrefix}OK`, dev.id]);
         
-        // Registrar métrica
         await pool.query("INSERT INTO metrics (time, host, device_id, latency_ms, status) VALUES (NOW(), $1, $2, $3, $4)", 
           [targetHost, dev.id, latency, status]);
 
-        // Publish to WebSocket
         fetch(`${WEBSOCKET_URL}/publish`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ host: targetHost, latency_ms: latency, status, device_id: dev.id, client_id: dev.client_id, time: new Date().toISOString() }),
@@ -378,8 +376,8 @@ async function cloudMonitor(deviceId = null) {
       };
 
       socket.on("connect", () => updateStatus("online", Date.now() - start));
-      socket.on("timeout", () => updateStatus("offline", 0, "Timeout"));
-      socket.on("error", (err) => updateStatus("offline", 0, err.code));
+      socket.on("timeout", () => updateStatus("offline", 0, "Timeout (VPN/Cloud)"));
+      socket.on("error", (err) => updateStatus("offline", 0, `Erro: ${err.code}`));
       socket.connect(dev.monitor_port, targetHost);
     }
   } catch (e) { console.error("Cloud Monitor Error:", e.message); }
