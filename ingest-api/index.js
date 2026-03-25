@@ -563,12 +563,10 @@ async function cloudMonitor(deviceId = null) {
 }
 setInterval(cloudMonitor, 60000);
 
-app.use((req, res) => res.status(404).json({ error: "Route not found" }));
-
 // Middleware para aceitar conexões de Auto Registro que podem vir com formatos variados
 app.use((req, res, next) => {
-  if (req.url === '/' && req.method === 'POST' && (req.body.ID || req.body.token)) {
-    req.url = '/push'; // Redireciona auto registro raiz para o endpoint push
+  if ((req.url === '/' || req.url === '') && req.method === 'POST') {
+    req.url = '/push';
   }
   next();
 });
@@ -579,3 +577,6 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 NexusWatch API Online na Porta: ${PORT}`);
   console.log(`=========================================`);
 });
+
+// Middleware 404 movido para o final de tudo
+app.use((req, res) => res.status(404).json({ error: "Route not found" }));
