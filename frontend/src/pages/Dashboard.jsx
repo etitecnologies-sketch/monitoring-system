@@ -245,7 +245,7 @@ export default function Dashboard({ hosts }) {
 
   const deviceMap = Object.fromEntries(devices.map(d=>[d.id,d]));
   const hostList  = Object.entries(hosts);
-  const online    = hostList.filter(([,d])=>d.time&&(Date.now()-new Date(d.time))<30000).length;
+  const online    = hostList.filter(([,d])=>d.status === "online" && d.time && (Date.now()-new Date(d.time))<60000).length;
 
   return (
     <div style={{padding:"24px 28px"}}>
