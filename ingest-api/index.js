@@ -12,6 +12,12 @@ const { SocksClient } = require("socks");
 
 const app = express();
 
+// Middleware de diagnóstico para logar todas as requisições no console do Railway
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 // ── Security & Middleware ────────────────────────────────────
 app.use(express.json({ limit: "100kb" }));
 app.use(cors({ origin: "*", credentials: true }));
@@ -362,27 +368,9 @@ async function cloudMonitor(deviceId = null) {
         const notePrefix = isPrivate ? "🛡️ VPN " : "☁️ Cloud ";
         await pool.query("UPDATE devices SET status=$1, last_seen=NOW(), notes=$2 WHERE id=$3", [status, error ? `${notePrefix}Error: ${error}` : `${notePrefix}OK`, dev.id]);
         await pool.query("INSERT INTO metrics (time, host, device_id, latency_ms, status) VALUES (NOW(), $1, $2, $3, $4)", [targetHost, dev.id, latency, status]);
-        fetch(`${WEBSOCKET_URL}/publish`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ host: targetHost, latency_ms: latency, status, device_id: dev.id, client_id: dev.client_id, time: new Date().toISOString() }),
-        }).catch(() => {});
       };
 
-      if (isPrivate && process.env.TAILSCALE_AUTHKEY) {
-        // Conexão via Tailscale SOCKS5 Proxy (necessário em containers Railway)
-        try {
-          const options = {
-            proxy: { host: '127.0.0.1', port: 1055, type: 5 },
-            command: 'connect',
-            destination: { host: targetHost, port: parseInt(dev.monitor_port) },
-            timeout: 8000
-          };
-          const { socket } = await SocksClient.createConnection(options);
-          socket.destroy();
-          updateStatus("online", Date.now() - start);
-        } catch (e) {
-          updateStatus("offline", 0, `SOCKS Error: ${e.message}`);
-        }
+      if (false) { // VPN desativada temporariamente para estabilidade
       } else {
         // Conexão direta (DDNS ou IP Público)
         const socket = new net.Socket();
