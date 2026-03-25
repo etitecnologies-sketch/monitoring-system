@@ -329,6 +329,7 @@ def check_ping_devices(cur, conn):
             try:
                 cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'offline',1,0,'offline',%s)",(dev_id,target or dev_name,client_id))
                 cur.execute("UPDATE devices SET status='offline' WHERE id=%s",(dev_id,))
+                cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,0,'offline')", (target or dev_name, dev_id))
                 conn.commit()
             except Exception as e: logger.error(f"Alert DB save error: {e}"); conn.rollback()
             edev_name = escape_html(dev_name)
@@ -393,8 +394,9 @@ def check_offline_devices(cur, conn):
                 event_time = last_seen.astimezone(datetime.timezone.get_default_free_timezone() if hasattr(datetime.timezone, 'get_default_free_timezone') else None).strftime("%d/%m/%Y %H:%M:%S") if last_seen else now_str()
 
                 if current_status == "offline":
-                    # Alerta de Queda
+                    # Alerta de Queda e Métrica Offline
                     cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'offline',1,0,'offline',%s)",(dev_id,hostname or dev_name,client_id))
+                    cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,0,'offline')", (hostname or dev_name, dev_id))
                     conn.commit()
                     
                     msg=(f"❌ <b>{edev_name}</b>\n"
@@ -413,8 +415,10 @@ def check_offline_devices(cur, conn):
                         f"Device '{dev_name}' parou de enviar dados.\nLatência: {latency_str}\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_str()}", cl_email)
                 
                 else:
-                    # Alerta de Retorno
+                    # Alerta de Retorno e Métrica Online
                     logger.info(f"✅ ONLINE RECUPERADO: {dev_name}")
+                    cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,%s,'online')", (hostname or dev_name, dev_id, last_latency or 0))
+                    conn.commit()
                     msg=(f"✅ <b>{edev_name}</b>\n"
                          f"Normalizado: Dispositivo voltou a se comunicar\n\n"
                          f"Host: {edev_name}\n"
