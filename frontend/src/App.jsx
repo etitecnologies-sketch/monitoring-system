@@ -508,6 +508,7 @@ const EMPTY_CLIENT = {
   name: "", document: "", email: "", phone: "", address: "",
   city: "", state: "", plan: "basic", status: "active",
   telegram_token: "", telegram_chat_id: "", alert_email: "", notes: "",
+  wa_instance: "", wa_token: "", wa_number: "",
 };
 
 function ClientModal({ client, onSave, onClose }) {
@@ -588,10 +589,24 @@ function ClientModal({ client, onSave, onClose }) {
         {tab === "alertas" && (
           <>
             <div style={{ ...S.fg, background: "#0d1520", borderRadius: 6, padding: 10, marginBottom: 14, fontSize: 10, color: "#4a6080" }}>
-              💡 Configure o bot Telegram específico deste cliente para ele receber os próprios alertas
+              💡 Configure os canais de alerta para este cliente (Telegram e WhatsApp)
             </div>
-            <div style={S.fg}><label style={S.label}>Telegram Token do Bot</label><input style={S.input} value={form.telegram_token} onChange={(e) => set("telegram_token", e.target.value)} placeholder="1234567890:AAH..." /></div>
-            <div style={S.fg}><label style={S.label}>Telegram Chat ID</label><input style={S.input} value={form.telegram_chat_id} onChange={(e) => set("telegram_chat_id", e.target.value)} placeholder="123456789" /></div>
+            
+            <div style={S.sectionTitle}>✈️ Telegram</div>
+            <div style={S.grid(2)}>
+              <div style={S.fg}><label style={S.label}>Token do Bot</label><input style={S.input} value={form.telegram_token} onChange={(e) => set("telegram_token", e.target.value)} placeholder="1234567890:AAH..." /></div>
+              <div style={S.fg}><label style={S.label}>Chat ID</label><input style={S.input} value={form.telegram_chat_id} onChange={(e) => set("telegram_chat_id", e.target.value)} placeholder="123456789" /></div>
+            </div>
+
+            <div style={S.divider} />
+            <div style={S.sectionTitle}>💬 WhatsApp (Evolution API)</div>
+            <div style={S.grid(2)}>
+              <div style={S.fg}><label style={S.label}>Instância</label><input style={S.input} value={form.wa_instance} onChange={(e) => set("wa_instance", e.target.value)} placeholder="NOME_DA_INSTANCIA" /></div>
+              <div style={S.fg}><label style={S.label}>Token/API Key</label><input style={S.input} value={form.wa_token} onChange={(e) => set("wa_token", e.target.value)} placeholder="API_KEY_AQUI" /></div>
+            </div>
+            <div style={S.fg}><label style={S.label}>Número de Destino (com DDD)</label><input style={S.input} value={form.wa_number} onChange={(e) => set("wa_number", e.target.value)} placeholder="5565999999999" /></div>
+
+            <div style={S.divider} />
             <div style={S.fg}><label style={S.label}>Email para Alertas</label><input style={S.input} value={form.alert_email} onChange={(e) => set("alert_email", e.target.value)} placeholder="alertas@empresa.com" /></div>
           </>
         )}

@@ -444,18 +444,37 @@ app.post("/push", metricsLimiter, async (req, res) => {
       msg += `Data: ${new Date().toLocaleString("pt-BR")}\n`;
       msg += `Equipamento: ${device_type || 'other'} - ${mac_address || 'N/A'} - ${serial_number || 'N/A'}\n`;
 
-      const clientRes = await pool.query("SELECT name, telegram_token, telegram_chat_id FROM clients WHERE id=$1", [dev.client_id]);
+      const clientRes = await pool.query("SELECT name, telegram_token, telegram_chat_id, wa_instance, wa_token, wa_number FROM clients WHERE id=$1", [dev.client_id]);
       const cData = clientRes.rows[0];
 
       if (cData?.name) msg += `Descrição: ${cData.name}\n`;
       msg += `Indicação: Verifique as imagens do Canal ${finalChannel}. ${finalDescription}`;
 
+      // Telegram
       if (cData?.telegram_token && cData?.telegram_chat_id) {
         fetch(`https://api.telegram.org/bot${cData.telegram_token}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: cData.telegram_chat_id, text: msg, parse_mode: "Markdown" })
         }).catch(() => {});
+      }
+
+      // WhatsApp (Evolution API)
+      const waApiUrl = process.env.WA_API_URL;
+      const waInstance = cData?.wa_instance || process.env.WA_INSTANCE;
+      const waToken = cData?.wa_token || process.env.WA_TOKEN;
+      const waNumber = cData?.wa_number || process.env.WA_NUMBER;
+
+      if (waApiUrl && waInstance && waToken && waNumber) {
+        fetch(`${waApiUrl.replace(/\/$/, "")}/message/sendText/${waInstance}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "apikey": waToken },
+          body: JSON.stringify({
+            number: waNumber,
+            options: { delay: 1200, presence: "composing", linkPreview: false },
+            textMessage: { text: msg }
+          })
+        }).catch((err) => console.error("Erro WhatsApp Ingest:", err.message));
       }
     }
 

@@ -24,6 +24,12 @@ SMTP_USER   = os.getenv("SMTP_USER", "")
 SMTP_PASS   = os.getenv("SMTP_PASS", "")
 ALERT_EMAIL = os.getenv("ALERT_EMAIL", "")
 
+# WhatsApp (Evolution API) globais
+WA_INSTANCE = os.getenv("WA_INSTANCE", "")
+WA_TOKEN    = os.getenv("WA_TOKEN", "")
+WA_NUMBER   = os.getenv("WA_NUMBER", "")
+WA_API_URL  = os.getenv("WA_API_URL", "").replace(/["'`\s]/g, "") # Sanitiza a URL da Evolution
+
 device_online_state = {}
 alert_cooldown_map  = {}
 ping_state          = {}
@@ -65,14 +71,48 @@ def get_conn():
 
 # ── Notificações por cliente ──────────────────────────────────
 def get_client_config(cur, client_id):
-    """Retorna config de telegram/email do cliente"""
-    if not client_id: return None, None, None, None
+    """Retorna config de telegram/email/whatsapp do cliente"""
+    if not client_id: return None, None, None, None, None, None, None
     try:
-        cur.execute("SELECT telegram_token, telegram_chat_id, alert_email, name FROM clients WHERE id=%s", (client_id,))
+        cur.execute("""
+            SELECT telegram_token, telegram_chat_id, alert_email, name,
+                   wa_instance, wa_token, wa_number
+            FROM clients WHERE id=%s
+        """, (client_id,))
         row = cur.fetchone()
-        if row: return row[0], row[1], row[2], row[3]
+        if row: return row[0], row[1], row[2], row[3], row[4], row[5], row[6]
     except: pass
-    return None, None, None, None
+    return None, None, None, None, None, None, None
+
+def send_whatsapp(message, instance=None, token=None, number=None):
+    """Envia mensagem via Evolution API para o cliente ou superadmin"""
+    targets = []
+    # Se o cliente tem WhatsApp configurado
+    if instance and token and number:
+        targets.append((instance, token, number))
+    
+    # Se o superadmin tem WhatsApp configurado (Global)
+    if WA_INSTANCE and WA_TOKEN and WA_NUMBER:
+        targets.append((WA_INSTANCE, WA_TOKEN, WA_NUMBER))
+    
+    if not targets or not WA_API_URL: return
+
+    for inst, tok, num in set(targets):
+        try:
+            url = f"{WA_API_URL.rstrip('/')}/message/sendText/{inst}"
+            headers = {"Content-Type": "application/json", "apikey": tok}
+            payload = {
+                "number": num,
+                "options": {"delay": 1200, "presence": "composing", "linkPreview": False},
+                "textMessage": {"text": message}
+            }
+            r = requests.post(url, json=payload, headers=headers, timeout=15)
+            if r.status_code in [200, 201]:
+                logger.info(f"WhatsApp ✓ sent to {num}")
+            else:
+                logger.error(f"WhatsApp error ({r.status_code}): {r.text}")
+        except Exception as e:
+            logger.error(f"WhatsApp exception: {e}")
 
 def send_telegram(message, token=None, chat_id=None):
     """Envia para o telegram do cliente ou do superadmin"""
@@ -266,7 +306,7 @@ def check_offline_devices(cur, conn):
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
         mac_sn_str = f"Detalhes do Equipamento: {dtype or 'other'} - {mac or 'N/A'} - {sn or 'N/A'}\n" if mac or sn else ""
-        tg_tok, tg_cid, cl_email, cl_name = get_client_config(cur, client_id)
+        tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
 
         if is_offline and not was_offline:
             device_online_state[dev_id]=True
@@ -285,6 +325,7 @@ def check_offline_devices(cur, conn):
                  +(f"Tags: {tags_str}\n" if tags_str else "")
                  +"Indicação: Verifique a conectividade do dispositivo.")
             send_telegram(msg, tg_tok, tg_cid)
+            send_whatsapp(msg, wa_inst, wa_tok, wa_num)
             send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
                 f"Device '{dev_name}' parou de enviar dados.\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_str()}", cl_email)
 
@@ -299,6 +340,7 @@ def check_offline_devices(cur, conn):
                  +(f"Descrição: {cl_name}\n" if cl_name else "")
                  +(f"Tags: {tags_str}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
+            send_whatsapp(msg, wa_inst, wa_tok, wa_num)
             send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
                 f"Device '{dev_name}' voltou.\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_str()}", cl_email)
 
