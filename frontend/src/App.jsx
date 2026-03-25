@@ -11,9 +11,17 @@ function useIsMobile() {
   return isMobile;
 }
 
-const rawApiBase = new URLSearchParams(window.location.search).get("fallback_api") 
-  ? atob(new URLSearchParams(window.location.search).get("fallback_api"))
-  : (import.meta.env.VITE_API_URL || "");
+const getInitialAPI = () => {
+  try {
+    const fallback = new URLSearchParams(window.location.search).get("fallback_api");
+    if (fallback) return atob(fallback);
+  } catch (e) {
+    console.error("Erro ao decodificar fallback_api:", e);
+  }
+  return import.meta.env.VITE_API_URL || "";
+};
+
+const rawApiBase = getInitialAPI();
 
 // ── DETECÇÃO AGRESSIVA DA API ──
 let API = rawApiBase.replace(/["']/g, "").trim();
@@ -409,7 +417,7 @@ function AuthPage({ onLogin }) {
     finally { setLoading(false); }
   };
 
-  if (!step) return <div style={{ ...S.app, alignItems: "center", justifyContent: "center" }}>Carregando...</div>;
+  if (!step && !err) return <div style={{ ...S.app, alignItems: "center", justifyContent: "center", color: "#38bdf8", fontFamily: 'Rajdhani', fontSize: 20 }}>Carregando...</div>;
 
   return (
     <div style={{ ...S.app, alignItems: "center", justifyContent: "center" }}>
@@ -426,20 +434,30 @@ function AuthPage({ onLogin }) {
         <div style={{ ...S.logoTitle, fontSize: 28, marginBottom: 4 }}>NexusWatch Pro</div>
         <div style={{ ...S.logoSub, fontSize: 12, marginBottom: 32 }}>INFRASTRUCTURE MONITORING</div>
         
-        <div style={S.fg}>
-          <label style={S.label}>Usuário</label>
-          <input style={S.input} placeholder="Seu usuário" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-        </div>
-        <div style={S.fg}>
-          <label style={S.label}>Senha</label>
-          <input style={S.input} type="password" placeholder="Sua senha" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && submit()} />
-        </div>
+        {step ? (
+          <>
+            <div style={S.fg}>
+              <label style={S.label}>Usuário</label>
+              <input style={S.input} placeholder="Seu usuário" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            </div>
+            <div style={S.fg}>
+              <label style={S.label}>Senha</label>
+              <input style={S.input} type="password" placeholder="Sua senha" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} onKeyDown={(e) => e.key === "Enter" && submit()} />
+            </div>
+          </>
+        ) : (
+          <div style={{ padding: '20px 0', color: '#4a6080' }}>
+            Aguardando resposta do servidor...
+          </div>
+        )}
         
-        {err && <div style={{ color: "#ff0055", fontSize: 12, marginBottom: 16, fontWeight: 600 }}>⚠️ {err}</div>}
+        {err && <div style={{ color: "#ff0055", fontSize: 12, marginBottom: 16, fontWeight: 600, background: 'rgba(255,0,85,0.1)', padding: 10, borderRadius: 8 }}>⚠️ {err}</div>}
         
-        <button style={{ ...S.btn("primary"), width: "100%", marginTop: 10, height: 45 }} onClick={submit} disabled={loading}>
-          {loading ? "PROCESSANDO..." : step === "setup" ? "CRIAR CONTA MASTER" : "INICIAR SESSÃO"}
-        </button>
+        {step && (
+          <button style={{ ...S.btn("primary"), width: "100%", marginTop: 10, height: 45 }} onClick={submit} disabled={loading}>
+            {loading ? "PROCESSANDO..." : step === "setup" ? "CRIAR CONTA MASTER" : "INICIAR SESSÃO"}
+          </button>
+        )}
 
         <div style={{ marginTop: 24, fontSize: 11, color: "#4a6080", letterSpacing: 1 }}>
           SISTEMA DE MONITORAMENTO 24/7
