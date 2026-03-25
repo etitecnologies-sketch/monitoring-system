@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 APP_NAME        = "NexusWatch Pro"
 
 def sanitize(val): return re.sub(r'["\'`\s]', '', val) if val else ""
+def escape_html(text):
+    if not text: return ""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 DATABASE_URL    = sanitize(os.environ.get("DATABASE_URL", ""))
 EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "5"))
@@ -124,19 +127,42 @@ def send_whatsapp(message, instance=None, token=None, number=None):
 def send_telegram(message, token=None, chat_id=None):
     """Envia para o telegram do cliente ou do superadmin com tratamento de erro e escape HTML"""
     targets = []
-    if token and chat_id: targets.append((token, chat_id))
-    if TG_TOKEN and TG_CHAT_ID: targets.append((TG_TOKEN, TG_CHAT_ID))
-    if not targets: return
+    # Se o cliente tem Telegram configurado
+    if token and chat_id:
+        targets.append((str(token).strip(), str(chat_id).strip()))
+    
+    # Se o superadmin tem Telegram configurado (Global)
+    if TG_TOKEN and TG_CHAT_ID:
+        targets.append((str(TG_TOKEN).strip(), str(TG_CHAT_ID).strip()))
+    
+    if not targets:
+        logger.error("Nenhum target de Telegram configurado!")
+        return
+        
     for tok, cid in set(targets):
         try:
-            r = requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
-                json={"chat_id":cid,"text":message,"parse_mode":"HTML"},timeout=10)
+            # Garante que o token não tenha o prefixo 'bot' duplicado
+            clean_tok = tok.replace("bot", "") if tok.startswith("bot") else tok
+            url = f"https://api.telegram.org/bot{clean_tok}/sendMessage"
+            
+            payload = {"chat_id": cid, "text": message, "parse_mode": "HTML"}
+            logger.info(f"Tentando enviar Telegram para {cid}...")
+            
+            r = requests.post(url, json=payload, timeout=15)
+            
             if r.status_code == 200:
-                logger.info(f"Telegram ✓ sent to {cid}")
+                logger.info(f"Telegram ✓ enviado com sucesso para {cid}")
             else:
-                logger.error(f"Telegram error {r.status_code} for {cid}: {r.text}")
+                logger.error(f"Telegram erro {r.status_code} para {cid}: {r.text}")
+                # Se falhou por causa do HTML, tenta enviar como texto puro como fallback
+                if "can't parse entities" in r.text.lower():
+                    logger.info(f"Tentando fallback para texto puro para {cid}...")
+                    payload.pop("parse_mode")
+                    r2 = requests.post(url, json=payload, timeout=15)
+                    if r2.status_code == 200:
+                        logger.info(f"Telegram ✓ enviado com fallback (texto puro) para {cid}")
         except Exception as e:
-            logger.error(f"Telegram exception: {e}")
+            logger.error(f"Telegram exceção ao enviar para {cid}: {e}")
 
 def send_email(subject, body, to_email=None):
     emails = list(set(filter(None, [to_email, ALERT_EMAIL])))
@@ -436,18 +462,28 @@ def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None
         except: pass
     d_icon=device_icon(dtype)
     tags_str=" ".join([f"#{t}" for t in tags]) if tags else ""
-    mac_sn_str = f"MAC: {mac} | SN: {sn}\n" if mac or sn else ""
-    client_suffix = f"\n🏢 Cliente: <b>{cl_name}</b>" if cl_name else ""
+    mac_sn_str = f"MAC: {escape_html(mac)} | SN: {escape_html(sn)}\n" if mac or sn else ""
+    client_suffix = f"\n🏢 Cliente: <b>{escape_html(cl_name)}</b>" if cl_name else ""
     logger.warning(f"ALERT [{sev_label}] {name} | {host} | {expr}={value:.1f}{unit}")
-    msg=(f"{sev_icon} {dname or host}\n"
-         f"Problema: {meta['label']} atingiu {value:.1f}{unit} (limite: {threshold}{unit})\n"
-         f"Host: {host}\n"
+    
+    # Escapando variáveis dinâmicas para evitar erro no Telegram HTML
+    ename = escape_html(name)
+    ehost = escape_html(host)
+    edname = escape_html(dname or host)
+    emeta_label = escape_html(meta['label'])
+    esev_label = escape_html(sev_label)
+    ecl_name = escape_html(cl_name)
+    etags_str = escape_html(tags_str)
+
+    msg=(f"{sev_icon} <b>{edname}</b>\n"
+         f"Problema: {emeta_label} atingiu {value:.1f}{unit} (limite: {threshold}{unit})\n"
+         f"Host: {ehost}\n"
          f"{mac_sn_str}"
          f"Data do Evento: {now_str()}\n"
-         f"Trigger: {name}\n"
-         +(f"Descrição: {cl_name}\n" if cl_name else "")
-         +(f"Tags: {tags_str}\n" if tags_str else "")
-         +f"Indicação: {sev_label} — verifique o dispositivo.")
+         f"Trigger: {ename}\n"
+         +(f"Descrição: {ecl_name}\n" if cl_name else "")
+         +(f"Tags: {etags_str}\n" if tags_str else "")
+         +f"Indicação: {esev_label} — verifique o dispositivo.")
     send_telegram(msg, tg_tok, tg_cid)
     send_email(f"[{APP_NAME}] {sev_icon} {sev_label}: {name} em {host}",
         f"ALERTA {sev_label}\n\nTrigger: {name}\nHost: {host}\nDevice: {dname or 'N/A'}\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nMétrica: {meta['label']} = {value:.1f}{unit}\nLimite: {threshold}{unit}\nHorário: {now_str()}", cl_email)

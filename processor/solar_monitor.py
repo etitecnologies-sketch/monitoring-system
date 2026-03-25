@@ -16,6 +16,11 @@ alert_cooldown_map = {}
 inverter_state     = {}  # id -> ultimo status
 
 def now_str(): return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def escape_html(text):
+    if not text: return ""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 def is_daytime():
     h = datetime.datetime.now().hour
     return 6 <= h <= 20
@@ -35,13 +40,27 @@ def set_cooldown(key):
 # ── Telegram ─────────────────────────────────────────────────
 def send_telegram(message, token=None, chat_id=None):
     targets = []
-    if token and chat_id: targets.append((token, chat_id))
-    if TG_TOKEN and TG_CHAT_ID: targets.append((TG_TOKEN, TG_CHAT_ID))
+    if token and chat_id: targets.append((str(token).strip(), str(chat_id).strip()))
+    if TG_TOKEN and TG_CHAT_ID: targets.append((str(TG_TOKEN).strip(), str(TG_CHAT_ID).strip()))
+    
     for tok, cid in set(targets):
         try:
-            requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
-                json={"chat_id": cid, "text": message, "parse_mode": "HTML"}, timeout=10)
-            logger.info(f"Telegram ✓ solar -> {cid}")
+            # Garante que o token não tenha o prefixo 'bot' duplicado
+            clean_tok = tok.replace("bot", "") if tok.startswith("bot") else tok
+            url = f"https://api.telegram.org/bot{clean_tok}/sendMessage"
+            
+            payload = {"chat_id": cid, "text": message, "parse_mode": "HTML"}
+            r = requests.post(url, json=payload, timeout=15)
+            
+            if r.status_code == 200:
+                logger.info(f"Telegram ✓ solar -> {cid}")
+            else:
+                logger.error(f"Telegram erro {r.status_code} para {cid}: {r.text}")
+                # Fallback para texto puro se HTML falhar
+                if "can't parse entities" in r.text.lower():
+                    payload.pop("parse_mode")
+                    requests.post(url, json=payload, timeout=15)
+                    logger.info(f"Telegram ✓ solar fallback -> {cid}")
         except Exception as e: logger.error(f"Telegram: {e}")
 
 def get_client_telegram(cur, client_id):
@@ -99,16 +118,18 @@ def check_solar_alerts(cur, inv, data, tg_tok, tg_cid):
     capacity = float(inv.get("capacity_kwp") or 0)
     prev_status = inverter_state.get(inv_id, "unknown")
 
-    # Alerta: inversor parou de gerar (durante o dia)
+    # Alerta: inversor parou de geração (durante o dia)
     if is_daytime() and status in ("offline","fault","idle") and prev_status == "generating":
         key = f"solar_offline_{inv_id}"
         if not is_in_cooldown(key):
             set_cooldown(key)
-            msg = (f"❌ {inv_name}\n"
+            einv_name = escape_html(inv_name)
+            elocation = escape_html(inv.get('location','—'))
+            msg = (f"❌ <b>{einv_name}</b>\n"
                    f"Problema: Inversor solar parou de gerar energia\n"
-                   f"Host: {inv_name}\n"
+                   f"Host: {einv_name}\n"
                    f"Data do Evento: {now_str()}\n"
-                   f"Local: {inv.get('location','—')}\n"
+                   f"Local: {elocation}\n"
                    f"Status: {status.upper()}\n"
                    f"Indicação: Verifique o inversor e a conexão com a rede.")
             send_telegram(msg, tg_tok, tg_cid)
@@ -117,11 +138,13 @@ def check_solar_alerts(cur, inv, data, tg_tok, tg_cid):
     # Alerta: inversor voltou a gerar
     if status == "generating" and prev_status in ("offline","fault","idle","unknown"):
         if prev_status != "unknown":
-            msg = (f"✅ {inv_name}\n"
+            einv_name = escape_html(inv_name)
+            elocation = escape_html(inv.get('location','—'))
+            msg = (f"✅ <b>{einv_name}</b>\n"
                    f"Normalizado: Inversor voltou a gerar energia\n"
-                   f"Host: {inv_name}\n"
+                   f"Host: {einv_name}\n"
                    f"Data da Normalização: {now_str()}\n"
-                   f"Local: {inv.get('location','—')}\n"
+                   f"Local: {elocation}\n"
                    f"Potência atual: {power:.0f}W")
             send_telegram(msg, tg_tok, tg_cid)
 
@@ -140,10 +163,12 @@ def check_solar_alerts(cur, inv, data, tg_tok, tg_cid):
                 pct = (energy / expected * 100) if expected > 0 else 0
                 performance = f"\n📈 Performance: <b>{pct:.0f}%</b> do esperado"
 
+            einv_name = escape_html(inv_name)
+            elocation = escape_html(inv.get('location','—'))
             msg = (f"☀️ <b>RELATÓRIO SOLAR DIÁRIO — {APP_NAME}</b>\n"
                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                   f"🔆 Inversor: <b>{inv_name}</b>\n"
-                   f"📍 Local: <b>{inv.get('location','—')}</b>\n"
+                   f"🔆 Inversor: <b>{einv_name}</b>\n"
+                   f"📍 Local: <b>{elocation}</b>\n"
                    f"━━━━━━━━━━━━━━━━━━━━\n"
                    f"⚡ Energia hoje: <b>{energy:.2f} kWh</b>\n"
                    f"💰 Receita hoje: <b>R$ {revenue:.2f}</b>\n"
