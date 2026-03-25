@@ -90,6 +90,8 @@ export default function AlertsPage() {
                 <div style={{fontSize:12,color:"#64748b"}}>
                   {a.device_name ? (
                     <><span style={{color:"#94a3b8"}}>{a.device_name}</span>
+                    {a.serial_number && <span style={{fontSize:10,background:"rgba(255,255,255,0.05)",padding:"1px 6px",borderRadius:4,marginLeft:6}}>SN: {a.serial_number}</span>}
+                    {a.mac_address && <span style={{fontSize:10,background:"rgba(255,255,255,0.05)",padding:"1px 6px",borderRadius:4,marginLeft:6}}>MAC: {a.mac_address}</span>}
                     <span style={{margin:"0 6px",color:"#2d2d50"}}>·</span></>
                   ):null}
                   <code style={{color:"#64748b",fontSize:11}}>{a.host}</code>

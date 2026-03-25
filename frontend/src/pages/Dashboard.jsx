@@ -146,7 +146,11 @@ function HostCard({ host, data, deviceMap }) {
           </div>
           <div style={{minWidth:0, flex: 1}}>
             <div style={{fontSize:isMobile ? 16 : 18,fontWeight:700,color:"#fff",letterSpacing:0.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{host}</div>
-            <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginTop:2}}>{device?.name || "Dispositivo Desconhecido"}</div>
+            <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginTop:2, display:"flex", gap:8}}>
+              <span>{device?.name || "Dispositivo Desconhecido"}</span>
+              {device?.serial_number && <span style={{color:"#475569"}}>SN: {device.serial_number}</span>}
+              {device?.mac_address && <span style={{color:"#475569"}}>MAC: {device.mac_address}</span>}
+            </div>
           </div>
         </div>
         <div style={{display:"flex",gap:6, width: isMobile ? "100%" : "auto"}}>

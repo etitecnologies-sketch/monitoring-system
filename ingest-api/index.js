@@ -303,7 +303,7 @@ app.get("/metrics/:host", auth, async (req, res) => {
 app.get("/alerts", auth, async (req, res) => {
   const cid = clientFilter(req);
   let query = `
-    SELECT m.*, d.name as device_name, c.name as client_name
+    SELECT m.*, d.name as device_name, d.mac_address, d.serial_number, c.name as client_name
     FROM metrics m
     JOIN devices d ON d.id = m.device_id
     JOIN clients c ON c.id = d.client_id
