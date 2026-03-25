@@ -4,6 +4,9 @@ from contextlib import contextmanager
 import psycopg2
 import concurrent.futures
 
+# Configuração de fuso horário local (Brasil/Brasília)
+TIMEZONE_DISPLAY = datetime.timezone(datetime.timedelta(hours=-3))
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -14,9 +17,13 @@ def escape_html(text):
     if not text: return ""
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
+def now_display():
+    """Retorna o horário atual formatado para o Brasil"""
+    return datetime.datetime.now(TIMEZONE_DISPLAY).strftime("%d/%m/%Y %H:%M:%S")
+
 DATABASE_URL    = sanitize(os.environ.get("DATABASE_URL", ""))
-EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "2")) # Ciclo mais rápido: 2s
-OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "15")) # Timeout agressivo: 15s
+EVAL_INTERVAL   = int(os.getenv("EVAL_INTERVAL", "1")) # Ciclo ultra-rápido: 1s
+OFFLINE_TIMEOUT = int(os.getenv("OFFLINE_TIMEOUT", "10")) # Timeout agressivo: 10s
 ALERT_COOLDOWN  = int(os.getenv("ALERT_COOLDOWN", "60"))
 PING_TIMEOUT    = int(os.getenv("PING_TIMEOUT", "2"))
 PING_COUNT      = int(os.getenv("PING_COUNT", "1"))
@@ -213,16 +220,17 @@ def collect_snmp(ip, community, version="2c"):
     return m
 
 def check_ping_devices(cur, conn):
-    cur.execute("""SELECT id,name,ip_address,device_type,tags,status,
-        snmp_community,snmp_version,monitor_snmp,hostname,client_id,ddns_address,monitor_port,
-        mac_address,serial_number
-        FROM devices WHERE (ip_address IS NOT NULL AND ip_address!='' AND (monitor_ping=TRUE OR monitor_port > 0))
-        OR (ddns_address IS NOT NULL AND ddns_address!='' AND monitor_port > 0)""")
+    cur.execute("""SELECT d.id,d.name,d.ip_address,d.device_type,d.tags,d.status,
+        d.snmp_community,d.snmp_version,d.monitor_snmp,d.hostname,d.client_id,d.ddns_address,d.monitor_port,
+        d.mac_address,d.serial_number,
+        (SELECT latency_ms FROM metrics WHERE device_id=d.id ORDER BY time DESC LIMIT 1) as last_latency
+        FROM devices d WHERE (d.ip_address IS NOT NULL AND d.ip_address!='' AND (d.monitor_ping=TRUE OR d.monitor_port > 0))
+        OR (d.ddns_address IS NOT NULL AND d.ddns_address!='' AND d.monitor_port > 0)""")
     devices=cur.fetchall()
     if not devices: return
 
     def check_one(dev):
-        dev_id,dev_name,ip,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,ddns,port,mac,sn=dev
+        dev_id,dev_name,ip,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,ddns,port,mac,sn,last_latency=dev
         
         alive = False
         latency = 0
@@ -279,12 +287,14 @@ def check_ping_devices(cur, conn):
 
     for r in results:
         if r is None: continue
-        dev_id,dev_name,target,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method,mac,sn=r
+        dev_id,dev_name,target,dtype,tags,db_status,sc,sv,do_snmp,hostname,client_id,alive,latency,method,mac,sn,last_latency=r
         d_icon=device_icon(dtype)
         tags_list=tags if tags else []
         tags_str=" ".join([f"#{t}" for t in tags_list]) if tags_list else ""
-        mac_sn_str = f"MAC: {mac} | SN: {sn}\n" if mac or sn else ""
-        was_down = ping_state.get(dev_id, False) or (db_status == 'offline')
+        mac_sn_str = f"MAC: {escape_html(mac)} | SN: {escape_html(sn)}\n" if mac or sn else ""
+        
+        # Estado atual do banco
+        was_down = (db_status == 'offline')
 
         # Buscar config do cliente
         tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
@@ -299,8 +309,8 @@ def check_ping_devices(cur, conn):
                     hl=hostname or target or dev_name
                     cur.execute("INSERT INTO hosts(name) VALUES(%s) ON CONFLICT(name) DO UPDATE SET name=EXCLUDED.name",(hl,))
                     cur.execute("""INSERT INTO metrics(time,host_id,host,device_id,cpu,memory,disk_used,
-                        disk_total,disk_percent,net_rx_bytes,net_tx_bytes,latency_ms,uptime_seconds,load_avg,processes,temperature)
-                        VALUES(NOW(),(SELECT id FROM hosts WHERE name=%s),%s,%s,0,0,0,0,0,0,0,%s,0,0,0,0)""",
+                        disk_total,disk_percent,net_rx_bytes,net_tx_bytes,latency_ms,uptime_seconds,load_avg,processes,temperature,status)
+                        VALUES(NOW(),(SELECT id FROM hosts WHERE name=%s),%s,%s,0,0,0,0,0,0,0,%s,0,0,0,0,'online')""",
                         (hl,hl,dev_id,latency))
                     conn.commit()
                 except Exception as e: logger.debug(f"Ping metric: {e}"); conn.rollback()
@@ -314,14 +324,16 @@ def check_ping_devices(cur, conn):
             msg=(f"✅ <b>{edev_name}</b>\n"
                  f"Normalizado: Host <b>{etarget}</b> está respondendo via {method}\n\n"
                  f"Host: {edev_name}\n"
-                 f"Data da Normalização: {now_str()}\n"
+                 f"Latência Atual: {latency:.1f}ms\n"
+                 f"Data da Normalização: {now_display()}\n"
                  f"Detalhes: {d_icon} {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n"
-                 +(f"Descrição: {ecl_name}\n" if cl_name else "")
+                 +(f"Descrição: {ecl_name}
+" if cl_name else "")
                  +(f"Tags: {escape_html(tags_str)}\n" if tags_str else ""))
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
             send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
-                f"Device '{dev_name}' voltou ONLINE.\nAlvo: {target}\nMétodo: {method}\nLatência: {latency:.0f}ms\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_str()}", cl_email)
+                f"Device '{dev_name}' voltou ONLINE.\nAlvo: {target}\nMétodo: {method}\nLatência: {latency:.1f}ms\nMAC: {mac}\nSN: {sn}\nCliente: {cl_name or 'N/A'}\nHorário: {now_display()}", cl_email)
 
         elif not alive and not was_down:
             ping_state[dev_id]=True
@@ -338,7 +350,8 @@ def check_ping_devices(cur, conn):
             msg=(f"❌ <b>{edev_name}</b>\n"
                  f"Problema: Host <b>{etarget}</b> está indisponível via {method}\n\n"
                  f"Host: {edev_name}\n"
-                 f"Data do Evento: {now_str()}\n"
+                 f"Última Latência: {last_latency if last_latency else 0:.1f}ms\n"
+                 f"Data do Evento: {now_display()}\n"
                  f"Detalhes: {d_icon} {escape_html(dtype or 'other')} - {escape_html(mac or 'N/A')} - {escape_html(sn or 'N/A')}\n"
                  +(f"Descrição: {ecl_name}\n" if cl_name else "")
                  +(f"Tags: {escape_html(tags_str)}\n" if tags_str else "")
@@ -402,8 +415,8 @@ def check_offline_devices(cur, conn):
                     msg=(f"❌ <b>{edev_name}</b>\n"
                          f"Problema: Host <b>{ehostname}</b> está indisponível\n\n"
                          f"Host: {edev_name}\n"
-                         f"Latência: {latency_str}\n"
-                         f"Data do Evento: {now_str()}\n"
+                         f"Última Latência: {latency_str}\n"
+                         f"Data do Evento: {now_display()}\n"
                          f"{mac_sn_str}"
                          +(f"Descrição: {ecl_name}\n" if cl_name else "")
                          +(f"Tags: {escape_html(tags_str)}\n" if tags_str else "")
@@ -412,7 +425,7 @@ def check_offline_devices(cur, conn):
                     send_telegram(msg, tg_tok, tg_cid)
                     send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
                     send_email(f"[{APP_NAME}] 🔴 OFFLINE: {dev_name}",
-                        f"Device '{dev_name}' parou de enviar dados.\nLatência: {latency_str}\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_str()}", cl_email)
+                        f"Device '{dev_name}' parou de enviar dados.\nLatência: {latency_str}\nCliente: {cl_name or 'N/A'}\nHost: {hostname}\nMAC: {mac}\nSN: {sn}\nÚltimo contato: {last_seen}\nHorário: {now_display()}", cl_email)
                 
                 else:
                     # Alerta de Retorno e Métrica Online
@@ -422,8 +435,8 @@ def check_offline_devices(cur, conn):
                     msg=(f"✅ <b>{edev_name}</b>\n"
                          f"Normalizado: Dispositivo voltou a se comunicar\n\n"
                          f"Host: {edev_name}\n"
-                         f"Latência: {latency_str}\n"
-                         f"Data da Normalização: {now_str()}\n"
+                         f"Latência Atual: {latency_str}\n"
+                         f"Data da Normalização: {now_display()}\n"
                          f"{mac_sn_str}"
                          +(f"Descrição: {ecl_name}\n" if cl_name else "")
                          +(f"Tags: {escape_html(tags_str)}\n" if tags_str else ""))
@@ -431,7 +444,7 @@ def check_offline_devices(cur, conn):
                     send_telegram(msg, tg_tok, tg_cid)
                     send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
                     send_email(f"[{APP_NAME}] 🟢 ONLINE: {dev_name}",
-                        f"Device '{dev_name}' voltou.\nLatência: {latency_str}\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_str()}", cl_email)
+                        f"Device '{dev_name}' voltou.\nLatência: {latency_str}\nCliente: {cl_name or 'N/A'}\nMAC: {mac}\nSN: {sn}\nHorário: {now_display()}", cl_email)
             except Exception as e:
                 logger.error(f"Error updating status/sending alert for {dev_name}: {e}")
                 conn.rollback()
