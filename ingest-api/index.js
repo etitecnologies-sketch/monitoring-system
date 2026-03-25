@@ -96,7 +96,7 @@ async function initDB() {
 initDB();
 
 const JWT_SECRET = process.env.JWT_SECRET || "nexuswatch-secret-key-2024";
-const WEBSOCKET_URL = process.env.WEBSOCKET_URL || "http://websocket:3001";
+const WEBSOCKET_URL = (process.env.WEBSOCKET_URL || "").replace(/["'`\s]/g, "").trim();
 
 // ── Middlewares ──────────────────────────────────────────────
 function auth(req, res, next) {

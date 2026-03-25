@@ -13,7 +13,10 @@ function useIsMobile() {
 
 const getInitialAPI = () => {
   const envApi = import.meta.env.VITE_API_URL;
-  if (envApi && envApi.length > 5) return envApi;
+  // Limpa aspas, crases e espaços que podem vir do Railway
+  const cleanApi = (envApi || "").replace(/["'`\s]/g, "").trim();
+  
+  if (cleanApi && cleanApi.length > 5) return cleanApi;
   
   const h = window.location.hostname;
   if (h === "localhost" || h === "127.0.0.1") return "http://localhost:3000";
@@ -26,9 +29,9 @@ const getInitialAPI = () => {
   return window.location.origin;
 };
 
-const API = getInitialAPI().replace(/["']/g, "").trim().replace(/\/$/, "");
+const API = getInitialAPI().replace(/\/$/, "");
 
-console.log("🚀 API URL:", API);
+console.log("🚀 API URL (Limpa):", API);
 
 const getToken = () => localStorage.getItem("token");
 const setToken = (t) => localStorage.setItem("token", t);
