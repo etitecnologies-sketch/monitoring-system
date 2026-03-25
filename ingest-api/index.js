@@ -8,7 +8,6 @@ const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 const net = require("net");
 const dns = require("dns").promises;
-const { SocksClient } = require("socks");
 
 const app = express();
 
