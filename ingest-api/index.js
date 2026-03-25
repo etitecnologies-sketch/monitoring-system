@@ -602,14 +602,15 @@ app.post("/push", metricsLimiter, async (req, res) => {
 
     console.log(`[Push] SINAL DE VIDA: ${dev.name} (${token})`);
 
-    // 1. Atualizar Status
-    await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", ["online", dev.id]);
+    // 1. Atualizar Sinal de Vida (Heartbeat)
+    // Deixamos o processor atualizar o status para 'online' e enviar o alerta
+    await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$2", [dev.id]);
     
     // Grava métrica de latência e solar
     await pool.query(`
       INSERT INTO metrics (time, host, device_id, latency_ms, status, solar_voltage, battery_voltage, battery_percent, charge_current, load_current)
-      VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [dev.name, dev.id, finalLatency, "online", solar_voltage, battery_voltage, battery_percent, charge_current, load_current]);
+      VALUES (NOW(), $1, $2, $3, 'online', $5, $6, $7, $8, $9)
+    `, [dev.name, dev.id, finalLatency, solar_voltage, battery_voltage, battery_percent, charge_current, load_current]);
 
     // 2. Registrar Eventos
     if (finalEventType) {
@@ -731,9 +732,10 @@ app.post("/metrics", metricsLimiter, async (req, res) => {
     if (dr.rows.length === 0) return res.status(401).json({ error: "Invalid token" });
     const devId = dr.rows[0].id;
     const cid = dr.rows[0].client_id;
-    await pool.query("UPDATE devices SET status=$1, last_seen=NOW() WHERE id=$2", [status||"online", devId]);
+    // Deixamos o processor atualizar o status para 'online' e enviar o alerta
+    await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [devId]);
     const hr = await pool.query("INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id", [host]);
-    await pool.query("INSERT INTO metrics (time, host_id, host, device_id, cpu, memory, latency_ms) VALUES (NOW(), $1, $2, $3, $4, $5, $6)", 
+    await pool.query("INSERT INTO metrics (time, host_id, host, device_id, cpu, memory, latency_ms, status) VALUES (NOW(), $1, $2, $3, $4, $5, $6, 'online')", 
       [hr.rows[0].id, host, devId, cpu||0, memory||0, latency_ms||0]);
     
     // Publish to WebSocket
