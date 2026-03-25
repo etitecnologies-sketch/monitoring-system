@@ -322,17 +322,28 @@ function AuthPage({ onLogin }) {
   const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    console.log(`[App] Verificando status da API em: ${API}/auth/status`);
-    api("/auth/status")
-      .then((d) => {
+    const checkStatus = async () => {
+      console.log(`[App] Verificando status da API em: ${API}/auth/status`);
+      try {
+        const d = await api("/auth/status");
         console.log("[App] API Status: OK", d);
         setStep(d.setupDone ? "login" : "setup");
-      })
-      .catch((e) => {
+      } catch (e) {
         console.error("[App] API Connection Error:", e);
-        setErr(`Não foi possível conectar à API. Verifique se ${API} está acessível.`);
-        setStep("login"); // Mantém login mas mostra o erro
-      });
+        const errorMsg = e.message || (typeof e === 'string' ? e : JSON.stringify(e));
+        setErr(
+          <span>
+            Não foi possível conectar à API. <br/>
+            <a href={`${API}/auth/status`} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
+              Clique aqui para testar o link da API
+            </a>
+            <div style={{ fontSize: '10px', marginTop: '5px', opacity: 0.7 }}>{errorMsg}</div>
+          </span>
+        );
+        setStep("login");
+      }
+    };
+    checkStatus();
   }, []);
 
   const submit = async () => {
