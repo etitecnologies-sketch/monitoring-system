@@ -912,7 +912,15 @@ async function cloudMonitor(deviceId = null) {
         const notePrefix = isPrivate ? "🛡️ VPN " : "☁️ Cloud ";
         const lastSeenUpdate = status === "online" ? ", last_seen=NOW()" : "";
         await pool.query(`UPDATE devices SET status=$1${lastSeenUpdate}, notes=$2 WHERE id=$3`, [status, error ? `${notePrefix}Error: ${error}` : `${notePrefix}OK`, dev.id]);
-        await pool.query("INSERT INTO metrics (time, host, device_id, latency_ms, status) VALUES (NOW(), $1, $2, $3, $4)", [targetHost, dev.id, latency, status]);
+        
+        // Garante que o host existe na tabela hosts e pega o id
+        const hr = await pool.query("INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id", [targetHost]);
+        const hostId = hr.rows[0].id;
+
+        await pool.query(`
+          INSERT INTO metrics (time, host_id, host, device_id, latency_ms, status) 
+          VALUES (NOW(), $1, $2, $3, $4, $5)
+        `, [hostId, targetHost, dev.id, latency, status]);
         
         if (WEBSOCKET_URL) {
           fetch(`${WEBSOCKET_URL}/publish`, {
@@ -969,12 +977,16 @@ const tcpServer = net.createServer((socket) => {
           // Deixa o Processor Python detectar que o sinal chegou e mudar para online
           await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [dev.id]);
           
+          // Garante que o host existe na tabela hosts e pega o id
+          const hr = await pool.query("INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id", [dev.name]);
+          const hostId = hr.rows[0].id;
+
           // Grava métrica de sinal de vida (latência fictícia baixa para TCP direto)
           // O Processor usa a tabela metrics e last_seen para decidir o status
           await pool.query(`
-            INSERT INTO metrics (time, host, device_id, latency_ms, status)
-            VALUES (NOW(), $1, $2, $3, 'online')
-          `, [dev.name, dev.id, 1]);
+            INSERT INTO metrics (time, host_id, host, device_id, latency_ms, status)
+            VALUES (NOW(), $1, $2, $3, $4, 'online')
+          `, [hostId, dev.name, dev.id, 1]);
 
           // Notifica WebSocket (Dashboard real-time)
           if (WEBSOCKET_URL) {

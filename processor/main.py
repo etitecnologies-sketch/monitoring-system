@@ -358,9 +358,13 @@ def check_ping_devices(cur, conn):
         elif not alive and not was_down and method != "NONE":
             logger.warning(f"🚨 DEVICE OFFLINE (Active): {dev_name} ({target})")
             try:
+                # Busca ou cria o host_id
+                cur.execute("INSERT INTO hosts(name) VALUES(%s) ON CONFLICT(name) DO UPDATE SET name=EXCLUDED.name RETURNING id", (target or dev_name,))
+                host_id = cur.fetchone()[0]
+
                 cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id) VALUES(%s,%s,'offline',1,0,'offline',%s)",(dev_id,target or dev_name,client_id))
                 cur.execute("UPDATE devices SET status='offline' WHERE id=%s",(dev_id,))
-                cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,0,'offline')", (target or dev_name, dev_id))
+                cur.execute("INSERT INTO metrics(time,host_id,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,%s,0,'offline')", (host_id, target or dev_name, dev_id))
                 conn.commit()
             except Exception as e: logger.error(f"Alert DB save error: {e}"); conn.rollback()
             
@@ -395,10 +399,14 @@ def check_offline_devices(cur, conn):
     for dev_id, dev_name, client_id, dtype, mac, sn in dropped:
         logger.warning(f"🚨 QUEDA POR TIMEOUT: {dev_name}")
         try:
+            # Busca ou cria o host_id
+            cur.execute("INSERT INTO hosts(name) VALUES(%s) ON CONFLICT(name) DO UPDATE SET name=EXCLUDED.name RETURNING id", (dev_name,))
+            host_id = cur.fetchone()[0]
+
             # Atualiza o status para offline no banco
             cur.execute("UPDATE devices SET status='offline' WHERE id=%s", (dev_id,))
             cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id,fired_at) VALUES(%s,%s,'offline',1,0,'offline',%s,NOW())",(dev_id,dev_name,client_id))
-            cur.execute("INSERT INTO metrics(time,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,0,'offline')", (dev_name, dev_id))
+            cur.execute("INSERT INTO metrics(time,host_id,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,%s,0,'offline')", (host_id, dev_name, dev_id))
             conn.commit()
             
             # Notificar WebSocket para atualizar o Dashboard em tempo real
