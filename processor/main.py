@@ -397,15 +397,21 @@ def check_offline_devices(cur, conn):
     dropped = cur.fetchall()
     
     for dev_id, dev_name, client_id, dtype, mac, sn in dropped:
+        if is_in_cooldown(dev_name, "offline"):
+            continue
         logger.warning(f"🚨 QUEDA POR TIMEOUT: {dev_name}")
         try:
+            cur.execute("SELECT 1 FROM alerts WHERE device_id=%s AND alert_type='offline' AND resolved_at IS NULL LIMIT 1", (dev_id,))
+            has_open_offline = cur.fetchone() is not None
+
             # Busca ou cria o host_id
             cur.execute("INSERT INTO hosts(name) VALUES(%s) ON CONFLICT(name) DO UPDATE SET name=EXCLUDED.name RETURNING id", (dev_name,))
             host_id = cur.fetchone()[0]
 
             # Atualiza o status para offline no banco
             cur.execute("UPDATE devices SET status='offline' WHERE id=%s", (dev_id,))
-            cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id,fired_at) VALUES(%s,%s,'offline',1,0,'offline',%s,NOW())",(dev_id,dev_name,client_id))
+            if not has_open_offline:
+                cur.execute("INSERT INTO alerts(device_id,host,expression,value,threshold,alert_type,client_id,fired_at) VALUES(%s,%s,'offline',1,0,'offline',%s,NOW())",(dev_id,dev_name,client_id))
             cur.execute("INSERT INTO metrics(time,host_id,host,device_id,latency_ms,status) VALUES(NOW(),%s,%s,%s,0,'offline')", (host_id, dev_name, dev_id))
             conn.commit()
             
@@ -428,47 +434,19 @@ def check_offline_devices(cur, conn):
             tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
             
             # Formato solicitado pelo usuário
-            msg=(f"❌ <b>{escape_html(dev_name)}</b>\n"
-                 f"Problema: O dispositivo está indisponível há mais de {OFFLINE_TIMEOUT}s\n\n"
-                 f"Host: <b>{escape_html(dev_name)}</b>\n"
-                 f"Data do Evento: <b>{now_display()}</b>\n"
-                 f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
-                 f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
-                 f"Indicação: Verifique a conectividade e energia do dispositivo.")
-            
-            send_telegram(msg, tg_tok, tg_cid)
-            send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
+            if not has_open_offline:
+                msg=(f"❌ <b>{escape_html(dev_name)}</b>\n"
+                     f"Problema: O dispositivo está indisponível há mais de {OFFLINE_TIMEOUT}s\n\n"
+                     f"Host: <b>{escape_html(dev_name)}</b>\n"
+                     f"Data do Evento: <b>{now_display()}</b>\n"
+                     f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
+                     f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
+                     f"Indicação: Verifique a conectividade e energia do dispositivo.")
+                
+                send_telegram(msg, tg_tok, tg_cid)
+                send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
+                set_cooldown(dev_name, "offline")
         except Exception as e: logger.error(f"Erro Queda Timeout: {e}"); conn.rollback()
-
-    # 2. DETECÇÃO DE RETORNO POR TIMEOUT (Sinal de vida recebido)
-    cur.execute(f"""
-        UPDATE devices 
-        SET status = 'online'
-        WHERE status IN ('offline', 'pending')
-          AND last_seen IS NOT NULL
-          AND EXTRACT(EPOCH FROM (NOW() - last_seen)) < {OFFLINE_TIMEOUT}
-        RETURNING id, name, client_id, device_type, mac_address, serial_number;
-    """)
-    recovered = cur.fetchall()
-
-    for dev_id, dev_name, client_id, dtype, mac, sn in recovered:
-        logger.info(f"✅ RETORNO POR SINAL: {dev_name}")
-        try:
-            cur.execute("UPDATE alerts SET resolved_at=NOW() WHERE device_id=%s AND alert_type='offline' AND resolved_at IS NULL", (dev_id,))
-            conn.commit()
-            tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
-            
-            # Formato solicitado
-            msg=(f"✅ <b>{escape_html(dev_name)}</b>\n"
-                 f"Normalizado: O dispositivo voltou a responder ao sistema\n\n"
-                 f"Host: <b>{escape_html(dev_name)}</b>\n"
-                 f"Data da Normalização: <b>{now_display()}</b>\n"
-                 f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
-                 f"Descrição: {escape_html(cl_name or 'NexusWatch')}")
-            
-            send_telegram(msg, tg_tok, tg_cid)
-            send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
-        except Exception as e: logger.error(f"Erro Retorno Timeout: {e}")
 
     cur.execute(f"""
         SELECT a.id, d.id, d.name, d.client_id, d.device_type, d.mac_address, d.serial_number
@@ -481,6 +459,8 @@ def check_offline_devices(cur, conn):
     """)
     recovered_by_alert = cur.fetchall()
     for alert_id, dev_id, dev_name, client_id, dtype, mac, sn in recovered_by_alert:
+        if is_in_cooldown(dev_name, "recovered"):
+            continue
         logger.info(f"✅ RETORNO POR SINAL: {dev_name}")
         try:
             cur.execute("UPDATE alerts SET resolved_at=NOW() WHERE id=%s", (alert_id,))
@@ -495,6 +475,7 @@ def check_offline_devices(cur, conn):
                  f"Descrição: {escape_html(cl_name or 'NexusWatch')}")
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
+            set_cooldown(dev_name, "recovered")
         except Exception as e:
             logger.error(f"Erro Retorno Timeout: {e}")
 
