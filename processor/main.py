@@ -388,7 +388,7 @@ def check_offline_devices(cur, conn):
     # 1. DETECÇÃO DE QUEDA POR TIMEOUT (Para Auto Registro / Push / Agent)
     # Selecionar dispositivos que deveriam estar offline usando comparação de segundos absoluta
     cur.execute(f"""
-        SELECT id, name, client_id, device_type, mac_address, serial_number 
+        SELECT id, name, client_id, device_type, mac_address, serial_number, description
         FROM devices 
         WHERE last_seen IS NOT NULL 
           AND status != 'offline'
@@ -396,7 +396,7 @@ def check_offline_devices(cur, conn):
     """)
     dropped = cur.fetchall()
     
-    for dev_id, dev_name, client_id, dtype, mac, sn in dropped:
+    for dev_id, dev_name, client_id, dtype, mac, sn, device_description in dropped:
         if is_in_cooldown(dev_name, "offline"):
             continue
         logger.warning(f"🚨 QUEDA POR TIMEOUT: {dev_name}")
@@ -441,6 +441,7 @@ def check_offline_devices(cur, conn):
                      f"Data do Evento: <b>{now_display()}</b>\n"
                      f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
                      f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
+                     +(f"Empresa: {escape_html(device_description)}\n" if device_description else "")
                      f"Indicação: Verifique a conectividade e energia do dispositivo.")
                 
                 send_telegram(msg, tg_tok, tg_cid)
@@ -449,7 +450,7 @@ def check_offline_devices(cur, conn):
         except Exception as e: logger.error(f"Erro Queda Timeout: {e}"); conn.rollback()
 
     cur.execute(f"""
-        SELECT a.id, d.id, d.name, d.client_id, d.device_type, d.mac_address, d.serial_number
+        SELECT a.id, d.id, d.name, d.client_id, d.device_type, d.mac_address, d.serial_number, d.description
         FROM alerts a
         JOIN devices d ON d.id = a.device_id
         WHERE a.alert_type = 'offline'
@@ -458,7 +459,7 @@ def check_offline_devices(cur, conn):
           AND EXTRACT(EPOCH FROM (NOW() - d.last_seen)) < {OFFLINE_TIMEOUT}
     """)
     recovered_by_alert = cur.fetchall()
-    for alert_id, dev_id, dev_name, client_id, dtype, mac, sn in recovered_by_alert:
+    for alert_id, dev_id, dev_name, client_id, dtype, mac, sn, device_description in recovered_by_alert:
         if is_in_cooldown(dev_name, "recovered"):
             continue
         logger.info(f"✅ RETORNO POR SINAL: {dev_name}")
@@ -472,7 +473,8 @@ def check_offline_devices(cur, conn):
                  f"Host: <b>{escape_html(dev_name)}</b>\n"
                  f"Data da Normalização: <b>{now_display()}</b>\n"
                  f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
-                 f"Descrição: {escape_html(cl_name or 'NexusWatch')}")
+                 f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
+                 +(f"Empresa: {escape_html(device_description)}" if device_description else ""))
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
             set_cooldown(dev_name, "recovered")
