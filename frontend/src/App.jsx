@@ -66,8 +66,7 @@ const getInitialAPI = () => {
     if (subdomain.includes("frontend")) {
       return "https://" + subdomain.replace("frontend", "ingest-api") + ".up.railway.app";
     }
-    // Caso contrário, assume que a API pode estar no mesmo domínio sob o prefixo api
-    return window.location.origin.replace("frontend", "ingest-api");
+    return window.location.origin + "/api";
   }
   
   // 6. Fallback final: Mesma origem
@@ -113,7 +112,8 @@ async function api(path, opts = {}) {
   const token = getToken();
 
   try {
-    const url = `${API}${path}`;
+    const base = API === window.location.origin ? `${API}/api` : API;
+    const url = `${base}${path}`;
     console.log(`📡 Chamando API: ${url}`);
     
     const res = await fetch(url, {
@@ -1381,46 +1381,192 @@ function AlertsPage({ userRole }) {
     return true;
   });
 
-  return (
-    <div>
-      <div style={S.pageTitle}>🚨 Alertas</div>
-      <div style={S.pageSub}>Histórico de alertas — {alerts.length} total</div>
+  const TYPE_STYLE = {
+    offline:   { bg:"rgba(255, 0, 85, 0.06)", border:"rgba(255, 0, 85, 0.28)", icon:"🔴", label:"Offline",   color:"#ff0055", shadow:"0 0 14px rgba(255,0,85,0.18)" },
+    threshold: { bg:"rgba(255, 174, 0, 0.06)", border:"rgba(255, 174, 0, 0.26)", icon:"🚨", label:"Threshold", color:"#ffae00", shadow:"0 0 14px rgba(255,174,0,0.14)" },
+  };
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {[["all","Todos"],["offline","🔴 Offline"],["threshold","⚠️ Threshold"]].map(([v,l]) => (
-          <button key={v} style={S.btn(filter===v?"primary":"ghost")} onClick={() => setFilter(v)}>{l}</button>
+  const METRIC_LABELS = {
+    cpu: "CPU", memory: "Memória", disk_percent: "Disco",
+    latency_ms: "Latência", load_avg: "Load Avg", offline: "Offline", temperature: "Temperatura"
+  };
+  const METRIC_UNITS = {
+    cpu:"%", memory:"%", disk_percent:"%", latency_ms:"ms", load_avg:"", offline:"", temperature:"°C"
+  };
+
+  const counts = useMemo(() => ({
+    all: alerts.length,
+    offline: alerts.filter(a => a.alert_type === "offline").length,
+    threshold: alerts.filter(a => a.alert_type === "threshold").length,
+  }), [alerts]);
+
+  return (
+    <div style={{ padding: "8px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 18 }}>
+        <div>
+          <div style={{ ...S.pageTitle, marginBottom: 6 }}>🚨 Alertas</div>
+          <div style={{ ...S.pageSub, marginTop: 0 }}>Histórico de alertas — {alerts.length} total</div>
+        </div>
+        <button onClick={load} style={{ ...S.btn("ghost"), padding: "10px 16px", borderRadius: 12 }}>
+          ↻ Atualizar
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
+        {[
+          ["all", "TODOS", "#38bdf8", counts.all],
+          ["offline", "OFFLINE", "#ff0055", counts.offline],
+          ["threshold", "THRESHOLD", "#ffae00", counts.threshold],
+        ].map(([k, label, c, n]) => (
+          <button
+            key={k}
+            onClick={() => setFilter(k)}
+            style={{
+              background: filter === k ? `${c}22` : "rgba(13, 13, 22, 0.55)",
+              border: `1px solid ${filter === k ? c : "rgba(255,255,255,0.06)"}`,
+              color: filter === k ? c : "#94a3b8",
+              borderRadius: 12,
+              padding: "10px 18px",
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              boxShadow: filter === k ? `0 0 14px ${c}33` : "none",
+              backdropFilter: "blur(10px)",
+              letterSpacing: "0.8px",
+              textTransform: "uppercase",
+            }}
+          >
+            <span style={{ width: 10, height: 10, borderRadius: 999, background: c, boxShadow: `0 0 10px ${c}99` }} />
+            {label}
+            <span style={{ background: filter === k ? `${c}44` : "rgba(255,255,255,0.10)", color: filter === k ? "#fff" : "#cbd5e1", borderRadius: 999, padding: "2px 10px", fontSize: 12, fontWeight: 900 }}>
+              {n}
+            </span>
+          </button>
         ))}
+
         {userRole === "superadmin" && (
-          <select style={{ ...S.select, maxWidth: 180 }} value={clientFilter2} onChange={(e) => setClientFilter2(e.target.value)}>
+          <select
+            style={{ ...S.select, maxWidth: 220, borderRadius: 12, height: 40 }}
+            value={clientFilter2}
+            onChange={(e) => setClientFilter2(e.target.value)}
+          >
             <option value="">Todos os clientes</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
       </div>
 
-      <div style={{ ...S.card, overflowX: "auto" }}>
-        <table style={S.table}>
-          <thead>
-            <tr>{["Tipo", "Device", userRole==="superadmin"?"Cliente":null, "Métrica", "Valor", "Limite", "Horário"].filter(Boolean).map((h) => <th key={h} style={S.th}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && <tr><td colSpan={7} style={{ ...S.td, textAlign: "center", color: "#3a5070", padding: 28 }}>Nenhum alerta</td></tr>}
-            {filtered.map((a) => (
-              <tr key={a.id}>
-                <td style={S.td}><span style={S.badge(a.alert_type==="offline"?"#ef4444":"#f59e0b")}>{a.alert_type==="offline"?"🔴 Offline":"⚠️ Threshold"}</span></td>
-                <td style={S.td}>
-                  <div style={{ fontWeight: 600, color: "#f1f5f9" }}>{a.device_name||"—"}</div>
-                  <div style={{ fontSize: 9, color: "#3a5070", fontFamily: "monospace" }}>{a.host}</div>
-                </td>
-                {userRole === "superadmin" && <td style={S.td}><span style={{ fontSize: 10, color: "#38bdf8" }}>{a.client_name||"—"}</span></td>}
-                <td style={S.td}>{EXPRESSIONS.find((e) => e.value===a.expression)?.label || a.expression}</td>
-                <td style={{ ...S.td, color: a.alert_type==="offline"?"#ef4444":"#f59e0b", fontWeight: 700 }}>{a.value!=null?a.value.toFixed(1):"—"}</td>
-                <td style={S.td}>{a.threshold!=null?a.threshold:"—"}</td>
-                <td style={{ ...S.td, fontSize: 10, color: "#3a5070" }}>{new Date(a.fired_at).toLocaleString("pt-BR")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {filtered.length === 0 && (
+        <div style={{ textAlign: "center", padding: "70px 24px", background: "rgba(15,15,25,0.35)", borderRadius: 24, border: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ fontSize: 56, marginBottom: 14, filter: "drop-shadow(0 0 14px rgba(56,189,248,0.35))" }}>✅</div>
+          <div style={{ color: "#fff", fontWeight: 900, fontSize: 20 }}>Nenhum alerta encontrado</div>
+          <div style={{ color: "#94a3b8", fontSize: 14, marginTop: 6 }}>Sistema operando normalmente.</div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {filtered.map((a) => {
+          const t = TYPE_STYLE[a.alert_type] || TYPE_STYLE.threshold;
+          const metricLabel = METRIC_LABELS[a.expression] || a.expression;
+          const unit = METRIC_UNITS[a.expression] ?? "%";
+          const valueNum = a.value != null ? Number(a.value) : null;
+          const thresholdNum = a.threshold != null ? Number(a.threshold) : null;
+
+          return (
+            <div
+              key={a.id}
+              style={{
+                background: t.bg,
+                border: `1px solid ${t.border}`,
+                borderRadius: 18,
+                padding: "18px 20px",
+                display: "flex",
+                alignItems: "center",
+                gap: 18,
+                flexWrap: "wrap",
+                boxShadow: t.shadow,
+                backdropFilter: "blur(12px)",
+              }}
+            >
+              <div style={{ fontSize: 28, flexShrink: 0, filter: `drop-shadow(0 0 8px ${t.color})` }}>{t.icon}</div>
+
+              <div style={{ flex: 1, minWidth: 260 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 16, fontWeight: 900, color: t.color, letterSpacing: "0.6px", textShadow: `0 0 8px ${t.color}66` }}>
+                    {a.trigger_name || (a.alert_type === "offline" ? "DEVICE OFFLINE" : "ALERT TRIGGERED")}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 900, background: `${t.color}20`, color: t.color, borderRadius: 999, padding: "4px 10px", border: `1px solid ${t.color}40`, textTransform: "uppercase" }}>
+                    {t.label}
+                  </span>
+                  {userRole === "superadmin" && (
+                    <span style={{ fontSize: 11, fontWeight: 800, background: "rgba(56,189,248,0.12)", color: "#38bdf8", borderRadius: 999, padding: "4px 10px", border: "1px solid rgba(56,189,248,0.28)" }}>
+                      {a.client_name || "—"}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ fontSize: 14, color: "#cbd5e1", fontWeight: 600, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <span style={{ color: "#fff", fontWeight: 900 }}>{a.device_name || "—"}</span>
+                  {a.serial_number && (
+                    <span style={{ fontSize: 12, background: "rgba(255,255,255,0.10)", padding: "3px 8px", borderRadius: 8, color: "#94a3b8", fontFamily: "monospace" }}>
+                      SN: {a.serial_number}
+                    </span>
+                  )}
+                  {a.mac_address && (
+                    <span style={{ fontSize: 12, background: "rgba(255,255,255,0.10)", padding: "3px 8px", borderRadius: 8, color: "#94a3b8", fontFamily: "monospace" }}>
+                      MAC: {a.mac_address}
+                    </span>
+                  )}
+                  <code style={{ color: "#64748b", fontSize: 12, background: "rgba(0,0,0,0.30)", padding: "3px 8px", borderRadius: 8 }}>
+                    {a.host}
+                  </code>
+                </div>
+
+                {(a.device_location || a.device_description) && (
+                  <div style={{ marginTop: 10, fontSize: 13, color: "#94a3b8", display: "flex", flexWrap: "wrap", gap: 10 }}>
+                    {a.device_location && (
+                      <span style={{ background: "rgba(0,242,255,0.08)", border: "1px solid rgba(0,242,255,0.18)", color: "#b6fbff", padding: "4px 10px", borderRadius: 999, fontWeight: 800 }}>
+                        {a.device_location}
+                      </span>
+                    )}
+                    {a.device_description && (
+                      <span style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)", padding: "4px 10px", borderRadius: 12, color: "#e2e8f0", fontWeight: 700 }}>
+                        {a.device_description}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ marginTop: 10, fontSize: 12, color: "#64748b", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                  {metricLabel}
+                </div>
+              </div>
+
+              {a.expression !== "offline" && valueNum != null && thresholdNum != null && (
+                <div style={{ textAlign: "right", minWidth: 140, background: "rgba(0,0,0,0.22)", padding: "10px 14px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.04)" }}>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: t.color, textShadow: `0 0 10px ${t.color}66` }}>
+                    {Number.isFinite(valueNum) ? valueNum.toFixed(1) : "—"}<span style={{ fontSize: 14, opacity: 0.8 }}>{unit}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b", fontWeight: 800, marginTop: 2, textTransform: "uppercase" }}>
+                    limite {Number.isFinite(thresholdNum) ? thresholdNum.toFixed(0) : "—"}{unit}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ textAlign: "right", minWidth: 160, borderLeft: "1px solid rgba(255,255,255,0.06)", paddingLeft: 16 }}>
+                <div style={{ fontSize: 14, color: "#cbd5e1", fontWeight: 800, marginBottom: 4 }}>
+                  {new Date(a.fired_at).toLocaleDateString("pt-BR")}
+                </div>
+                <div style={{ fontSize: 13, color: "#64748b", fontFamily: "monospace" }}>
+                  {new Date(a.fired_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
