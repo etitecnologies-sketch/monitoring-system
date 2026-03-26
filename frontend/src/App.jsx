@@ -247,128 +247,137 @@ const S = {
   }),
   card: { 
     background: "rgba(10, 15, 26, 0.6)", 
-    backdropFilter: "blur(8px)",
+    backdropFilter: "blur(12px)",
     border: "1px solid rgba(56, 189, 248, 0.15)", 
-    borderRadius: 12, 
+    borderRadius: 16, 
     padding: 24,
     boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
     position: "relative",
-    overflow: "hidden"
+    overflow: "hidden",
+    transition: "transform 0.2s ease, box-shadow 0.2s ease"
   },
   statCard: (c) => ({ 
     background: "rgba(10, 15, 26, 0.6)", 
-    backdropFilter: "blur(8px)",
+    backdropFilter: "blur(12px)",
     border: `1px solid ${c}40`, 
-    borderRadius: 12, 
+    borderRadius: 16, 
     padding: 24,
-    boxShadow: `0 0 20px ${c}10`
+    boxShadow: `0 0 20px ${c}10`,
+    transition: "transform 0.2s ease"
   }),
   statVal: (c) => ({ 
     fontSize: 36, 
-    fontWeight: 700, 
+    fontWeight: 800, 
     color: c, 
     lineHeight: 1,
     textShadow: `0 0 15px ${c}60`
   }),
-  statLabel: { fontSize: 11, color: "#64748b", marginTop: 8, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 500 },
+  statLabel: { fontSize: 11, color: "#64748b", marginTop: 8, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 600 },
   badge: (c) => ({ 
     display: "inline-flex", 
     alignItems: "center", 
     gap: 4, 
-    padding: "3px 10px", 
-    borderRadius: 4, 
+    padding: "4px 10px", 
+    borderRadius: 6, 
     fontSize: 10, 
     fontWeight: 700, 
     background: `${c}15`, 
     color: c, 
     border: `1px solid ${c}40`,
     textTransform: "uppercase",
-    letterSpacing: 0.5
+    letterSpacing: 0.5,
+    boxShadow: `0 0 10px ${c}20`
   }),
   btn: (v = "primary") => ({ 
     padding: "10px 20px", 
-    borderRadius: 6, 
-    border: "1px solid transparent", 
+    borderRadius: 8, 
+    border: v === "ghost" ? "1px solid rgba(56, 189, 248, 0.1)" : "1px solid transparent", 
     cursor: "pointer", 
     fontSize: 12, 
     fontWeight: 700, 
     fontFamily: "inherit", 
-    background: v === "primary" ? "#38bdf8" : v === "danger" ? "#ef4444" : v === "purple" ? "#a78bfa" : "rgba(30, 41, 59, 0.5)", 
+    background: v === "primary" ? "#38bdf8" : v === "danger" ? "#ef4444" : v === "purple" ? "#a78bfa" : "rgba(15, 23, 42, 0.6)", 
     color: v === "ghost" ? "#94a3b8" : "#050508", 
     transition: "all 0.2s ease",
     textTransform: "uppercase",
     letterSpacing: 1,
-    boxShadow: v !== "ghost" ? `0 4px 14px ${v === "primary" ? "#38bdf844" : v === "danger" ? "#ef444444" : "#00000044"}` : "none"
+    boxShadow: v !== "ghost" ? `0 4px 15px ${v === "primary" ? "#38bdf866" : v === "danger" ? "#ef444466" : "#00000044"}` : "none"
   }),
   btnSm: (v = "ghost") => ({ 
-    padding: "5px 12px", 
-    borderRadius: 4, 
-    border: "1px solid rgba(56, 189, 248, 0.1)", 
+    padding: "6px 14px", 
+    borderRadius: 6, 
+    border: "1px solid rgba(56, 189, 248, 0.15)", 
     cursor: "pointer", 
     fontSize: 10, 
     fontWeight: 600, 
     fontFamily: "inherit", 
-    background: v === "danger" ? "#ef444422" : "rgba(30, 41, 59, 0.3)", 
-    color: v === "danger" ? "#ef4444" : "#94a3b8",
-    transition: "all 0.2s"
+    background: v === "danger" ? "rgba(239, 68, 68, 0.15)" : "rgba(15, 23, 42, 0.6)", 
+    color: v === "danger" ? "#ef4444" : "#38bdf8",
+    transition: "all 0.2s ease",
+    textTransform: "uppercase",
+    letterSpacing: 0.5
   }),
   input: { 
     width: "100%", 
     background: "rgba(5, 5, 10, 0.6)", 
     border: "1px solid rgba(56, 189, 248, 0.2)", 
     borderRadius: 8, 
-    padding: "10px 14px", 
+    padding: "12px 16px", 
     color: "#fff", 
     fontSize: 13, 
     fontFamily: "inherit", 
     boxSizing: "border-box", 
     outline: "none",
-    transition: "border-color 0.2s",
-    "&:focus": { borderColor: "#38bdf8" }
+    transition: "all 0.2s ease",
+    boxShadow: "inset 0 2px 4px rgba(0,0,0,0.5)",
+    "&:focus": { borderColor: "#38bdf8", boxShadow: "0 0 10px rgba(56, 189, 248, 0.2), inset 0 2px 4px rgba(0,0,0,0.5)" }
   },
   select: { 
     width: "100%", 
     background: "rgba(5, 5, 10, 0.6)", 
     border: "1px solid rgba(56, 189, 248, 0.2)", 
     borderRadius: 8, 
-    padding: "10px 14px", 
+    padding: "12px 16px", 
     color: "#fff", 
     fontSize: 13, 
     fontFamily: "inherit", 
     boxSizing: "border-box", 
-    outline: "none" 
+    outline: "none",
+    transition: "all 0.2s ease",
+    boxShadow: "inset 0 2px 4px rgba(0,0,0,0.5)"
   },
-  label: { fontSize: 11, color: "#64748b", marginBottom: 6, display: "block", textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 },
+  label: { fontSize: 11, color: "#64748b", marginBottom: 6, display: "block", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 },
   fg: { marginBottom: 20 },
   table: { width: "100%", borderCollapse: "separate", borderSpacing: "0 8px", fontSize: 13 },
-  th: { padding: "12px 15px", textAlign: "left", color: "#4a6080", fontSize: 10, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 700 },
-  td: { padding: "15px", background: "rgba(15, 23, 42, 0.3)", borderTop: "1px solid rgba(56, 189, 248, 0.05)", borderBottom: "1px solid rgba(56, 189, 248, 0.05)", color: "#cbd5e1" },
-  modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  th: { padding: "12px 16px", textAlign: "left", color: "#4a6080", fontSize: 10, textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 700, borderBottom: "1px solid rgba(56, 189, 248, 0.1)" },
+  td: { padding: "16px", background: "rgba(15, 23, 42, 0.4)", borderTop: "1px solid rgba(56, 189, 248, 0.05)", borderBottom: "1px solid rgba(56, 189, 248, 0.05)", color: "#cbd5e1" },
+  modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
   modalBox: { 
     background: "rgba(10, 15, 26, 0.95)", 
-    border: "1px solid rgba(56, 189, 248, 0.3)", 
-    borderRadius: 16, 
+    border: "1px solid rgba(56, 189, 248, 0.4)", 
+    borderRadius: 20, 
     padding: window.innerWidth < 768 ? 20 : 32, 
     width: "95%",
-    maxWidth: 580, 
+    maxWidth: 600, 
     maxHeight: "90vh", 
     overflowY: "auto",
-    boxShadow: "0 0 50px rgba(0,0,0,0.5), 0 0 20px rgba(56, 189, 248, 0.1)"
+    boxShadow: "0 20px 60px rgba(0,0,0,0.8), 0 0 30px rgba(56, 189, 248, 0.15)"
   },
-  modalTitle: { fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 24, textTransform: "uppercase", letterSpacing: 1 },
-  sectionTitle: { fontSize: 11, fontWeight: 700, color: "#38bdf8", marginBottom: 16, textTransform: "uppercase", letterSpacing: 2 },
-  divider: { borderTop: "1px solid rgba(56, 189, 248, 0.1)", margin: "20px 0" },
-  tag: { display: "inline-flex", alignItems: "center", gap: 3, background: "rgba(56, 189, 248, 0.1)", color: "#38bdf8", border: "1px solid rgba(56, 189, 248, 0.3)", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600, marginRight: 6, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
+  modalTitle: { fontSize: 20, fontWeight: 800, color: "#fff", marginBottom: 24, textTransform: "uppercase", letterSpacing: 1, textShadow: "0 0 15px rgba(56, 189, 248, 0.5)", display: "flex", alignItems: "center", gap: 10 },
+  sectionTitle: { fontSize: 11, fontWeight: 800, color: "#38bdf8", marginBottom: 16, textTransform: "uppercase", letterSpacing: 2, background: "rgba(56, 189, 248, 0.05)", padding: "6px 12px", borderRadius: 6, display: "inline-block" },
+  divider: { borderTop: "1px solid rgba(56, 189, 248, 0.1)", margin: "24px 0" },
+  tag: { display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(56, 189, 248, 0.1)", color: "#38bdf8", border: "1px solid rgba(56, 189, 248, 0.3)", borderRadius: 6, padding: "3px 10px", fontSize: 10, fontWeight: 700, marginRight: 6, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5, boxShadow: "0 0 10px rgba(56, 189, 248, 0.1)" },
   eventCard: (severity) => ({
-    padding: "12px 16px",
-    borderRadius: 12,
-    background: severity === "critical" ? "rgba(239, 68, 68, 0.1)" : "rgba(15, 23, 42, 0.4)",
-    border: `1px solid ${severity === "critical" ? "rgba(239, 68, 68, 0.2)" : "rgba(56, 189, 248, 0.1)"}`,
-    marginBottom: 10,
+    padding: "16px 20px",
+    borderRadius: 14,
+    background: severity === "critical" ? "rgba(239, 68, 68, 0.08)" : "rgba(15, 23, 42, 0.5)",
+    border: `1px solid ${severity === "critical" ? "rgba(239, 68, 68, 0.3)" : "rgba(56, 189, 248, 0.15)"}`,
+    marginBottom: 12,
     display: "flex",
-    gap: 12,
+    gap: 16,
     alignItems: "center",
-    transition: "transform 0.2s ease",
+    transition: "transform 0.2s ease, box-shadow 0.2s ease",
+    boxShadow: severity === "critical" ? "0 0 15px rgba(239, 68, 68, 0.15)" : "none",
     cursor: "default"
   }),
 };
@@ -725,39 +734,39 @@ function ClientsPage() {
           <div style={S.pageTitle}>🏢 Clientes</div>
           <div style={S.pageSub}>Gerenciar clientes — {clients.length} cadastrado(s)</div>
         </div>
-        <button style={S.btn("primary")} onClick={() => setModal("new")}>+ Novo Cliente</button>
+        <button style={{ ...S.btn("primary"), boxShadow: "0 0 15px rgba(56,189,248,0.4)" }} onClick={() => setModal("new")}>+ Novo Cliente</button>
       </div>
 
-      <div style={{ ...S.card, marginBottom: 16, display: "flex", gap: 10 }}>
-        <input style={{ ...S.input, maxWidth: 280 }} placeholder="🔍 Buscar cliente..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        <span style={{ fontSize: 11, color: "#3a5070", alignSelf: "center" }}>{filtered.length} resultado(s)</span>
+      <div style={{ ...S.card, marginBottom: 24, display: "flex", gap: 10, background: "rgba(10, 15, 26, 0.4)", border: "1px solid rgba(56,189,248,0.1)" }}>
+        <input style={{ ...S.input, maxWidth: 300 }} placeholder="🔍 Buscar cliente..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <span style={{ fontSize: 12, color: "#38bdf8", alignSelf: "center", fontWeight: 600 }}>{filtered.length} resultado(s)</span>
       </div>
 
-      <div style={{ ...S.card, overflowX: "auto" }}>
-        <table style={S.table}>
+      <div style={{ ...S.card, overflowX: "auto", padding: 0 }}>
+        <table style={{ ...S.table, margin: 0, borderSpacing: 0 }}>
           <thead>
             <tr>{["Cliente", "Plano", "Status", "Devices", "Online", "Offline", "Cidade", "Ações"].map((h) => (
-              <th key={h} style={S.th}>{h}</th>
+              <th key={h} style={{ ...S.th, padding: "16px 20px" }}>{h}</th>
             ))}</tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td colSpan={8} style={{ ...S.td, textAlign: "center", color: "#3a5070", padding: 28 }}>Nenhum cliente cadastrado</td></tr>
+              <tr><td colSpan={8} style={{ ...S.td, textAlign: "center", color: "#3a5070", padding: 40 }}>Nenhum cliente cadastrado</td></tr>
             )}
-            {filtered.map((c) => (
-              <tr key={c.id}>
-                <td style={S.td}>
-                  <div style={{ fontWeight: 700, color: "#f1f5f9" }}>{c.name}</div>
-                  <div style={{ fontSize: 10, color: "#3a5070" }}>{c.document || "—"}</div>
+            {filtered.map((c, i) => (
+              <tr key={c.id} style={{ background: i % 2 === 0 ? "transparent" : "rgba(15,23,42,0.2)", transition: "background 0.2s", ":hover": { background: "rgba(56,189,248,0.05)" } }}>
+                <td style={{ ...S.td, border: "none", padding: "16px 20px" }}>
+                  <div style={{ fontWeight: 800, color: "#f1f5f9", fontSize: 14 }}>{c.name}</div>
+                  <div style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace", marginTop: 2 }}>{c.document || "—"}</div>
                 </td>
-                <td style={S.td}><span style={S.badge(planColor(c.plan))}>{c.plan}</span></td>
-                <td style={S.td}><span style={S.badge(statusColor[c.status] || "#64748b")}>{statusLabel[c.status] || c.status}</span></td>
-                <td style={{ ...S.td, color: "#38bdf8", fontWeight: 700 }}>{c.device_count || 0}</td>
-                <td style={{ ...S.td, color: "#22c55e", fontWeight: 700 }}>{c.online_count || 0}</td>
-                <td style={{ ...S.td, color: c.offline_count > 0 ? "#ef4444" : "#3a5070", fontWeight: 700 }}>{c.offline_count || 0}</td>
-                <td style={S.td}>{c.city || "—"}</td>
-                <td style={S.td}>
-                  <div style={{ display: "flex", gap: 5 }}>
+                <td style={{ ...S.td, border: "none" }}><span style={S.badge(planColor(c.plan))}>{c.plan}</span></td>
+                <td style={{ ...S.td, border: "none" }}><span style={S.badge(statusColor[c.status] || "#64748b")}>{statusLabel[c.status] || c.status}</span></td>
+                <td style={{ ...S.td, border: "none", color: "#38bdf8", fontWeight: 800, fontSize: 16 }}>{c.device_count || 0}</td>
+                <td style={{ ...S.td, border: "none", color: "#22c55e", fontWeight: 800, fontSize: 16 }}>{c.online_count || 0}</td>
+                <td style={{ ...S.td, border: "none", color: c.offline_count > 0 ? "#ef4444" : "#3a5070", fontWeight: 800, fontSize: 16 }}>{c.offline_count || 0}</td>
+                <td style={{ ...S.td, border: "none", color: "#94a3b8", fontSize: 12 }}>{c.city || "—"}</td>
+                <td style={{ ...S.td, border: "none" }}>
+                  <div style={{ display: "flex", gap: 8 }}>
                     <button style={S.btnSm()} onClick={() => setModal(c)} title="Editar">✏️</button>
                     <button style={S.btnSm()} onClick={() => setUserModal(c.id)} title="Criar usuário">👤</button>
                     <button style={S.btnSm("danger")} onClick={() => del(c.id)}>🗑️</button>
@@ -973,7 +982,7 @@ function DevicesPage({ userRole, userClientId }) {
         <button style={S.btn("primary")} onClick={() => setModal("new")}>+ Novo Dispositivo</button>
       </div>
 
-      <div style={{ ...S.card, marginBottom: 24, display: "flex", gap: 12, flexWrap: "wrap", background: "rgba(10, 15, 26, 0.4)" }}>
+      <div style={{ ...S.card, marginBottom: 24, display: "flex", gap: 12, flexWrap: "wrap", background: "rgba(10, 15, 26, 0.4)", border: "1px solid rgba(56,189,248,0.1)" }}>
         <input style={{ ...S.input, maxWidth: 200 }} placeholder="🔍 Buscar..." value={filter.search} onChange={(e) => setFilter({ ...filter, search: e.target.value })} />
         <select style={{ ...S.select, maxWidth: 150 }} value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value })}>
           <option value="">Todos os tipos</option>
@@ -994,8 +1003,8 @@ function DevicesPage({ userRole, userClientId }) {
 
       <div style={{ 
         display: "grid", 
-        gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(320px, 1fr))", 
-        gap: 20 
+        gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(340px, 1fr))", 
+        gap: 24 
       }}>
         {filtered.length === 0 && (
           <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 60, color: "#4a6080" }}>
@@ -1003,15 +1012,20 @@ function DevicesPage({ userRole, userClientId }) {
           </div>
         )}
         {filtered.map((d) => (
-          <div key={d.id} style={{ ...S.card, padding: 20, border: `1px solid ${d.status === "online" ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)"}` }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(56, 189, 248, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
+          <div key={d.id} style={{ 
+            ...S.card, 
+            padding: 24, 
+            border: `1px solid ${d.status === "online" ? "rgba(34, 197, 94, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+            boxShadow: d.status === "online" ? "0 10px 30px rgba(34, 197, 94, 0.05)" : "0 10px 30px rgba(239, 68, 68, 0.1)"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
+              <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                <div style={{ width: 46, height: 46, borderRadius: 12, background: d.status === "online" ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, border: `1px solid ${d.status === "online" ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.2)"}` }}>
                   {deviceIcon(d.device_type)}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, color: "#fff", fontSize: 15 }}>{d.name}</div>
-                  <div style={{ fontSize: 10, color: "#64748b" }}>{d.location || "Sem localização"}</div>
+                  <div style={{ fontWeight: 800, color: "#fff", fontSize: 16, letterSpacing: 0.5 }}>{d.name}</div>
+                  <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>{d.location || "Sem localização"}</div>
                 </div>
               </div>
               <span style={S.badge(d.status === "online" ? "#22c55e" : "#ef4444")}>
@@ -1019,79 +1033,79 @@ function DevicesPage({ userRole, userClientId }) {
               </span>
             </div>
 
-            <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 10, color: "#4a6080" }}>{d.ddns_address ? "DDNS" : "IP / VPN"}</span>
-                <span style={{ fontSize: 10, color: d.ddns_address ? "#38bdf8" : "#a78bfa", fontFamily: "monospace", fontWeight: 700 }}>{d.ddns_address || d.ip_address || "—"}</span>
+            <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: 12, padding: 16, marginBottom: 20, border: "1px solid rgba(255,255,255,0.03)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                <span style={{ fontSize: 10, color: "#64748b", fontWeight: 700 }}>{d.ddns_address ? "DDNS" : "IP / VPN"}</span>
+                <span style={{ fontSize: 11, color: d.ddns_address ? "#38bdf8" : "#a78bfa", fontFamily: "monospace", fontWeight: 700 }}>{d.ddns_address || d.ip_address || "—"}</span>
               </div>
               
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "8px", marginBottom: "8px" }}>
-                <div style={{ background: "rgba(56, 189, 248, 0.05)", padding: "6px", borderRadius: "6px", border: "1px solid rgba(56, 189, 248, 0.1)" }}>
-                  <span style={{ fontSize: "8px", color: "#38bdf8", display: "block", textTransform: "uppercase" }}>MAC Address</span>
-                  <span style={{ fontSize: "11px", color: "#fff", fontWeight: "600", fontFamily: "monospace" }}>{d.mac_address || "---"}</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "10px", marginBottom: "10px" }}>
+                <div style={{ background: "rgba(56, 189, 248, 0.08)", padding: "8px", borderRadius: "8px", border: "1px solid rgba(56, 189, 248, 0.15)" }}>
+                  <span style={{ fontSize: "9px", color: "#38bdf8", display: "block", textTransform: "uppercase", fontWeight: 800, marginBottom: 2 }}>MAC Address</span>
+                  <span style={{ fontSize: "11px", color: "#fff", fontWeight: "700", fontFamily: "monospace" }}>{d.mac_address || "---"}</span>
                 </div>
-                <div style={{ background: "rgba(167, 139, 250, 0.05)", padding: "6px", borderRadius: "6px", border: "1px solid rgba(167, 139, 250, 0.1)" }}>
-                  <span style={{ fontSize: "8px", color: "#a78bfa", display: "block", textTransform: "uppercase" }}>Serial Number</span>
-                  <span style={{ fontSize: "11px", color: "#fff", fontWeight: "600", fontFamily: "monospace" }}>{d.serial_number || "---"}</span>
+                <div style={{ background: "rgba(167, 139, 250, 0.08)", padding: "8px", borderRadius: "8px", border: "1px solid rgba(167, 139, 250, 0.15)" }}>
+                  <span style={{ fontSize: "9px", color: "#a78bfa", display: "block", textTransform: "uppercase", fontWeight: 800, marginBottom: 2 }}>Serial Number</span>
+                  <span style={{ fontSize: "11px", color: "#fff", fontWeight: "700", fontFamily: "monospace" }}>{d.serial_number || "---"}</span>
                 </div>
               </div>
 
               {/* Status Solar (Se disponível) */}
               {(d.solar_voltage > 0 || d.battery_percent > 0) && (
-                <div style={{ background: "rgba(234, 179, 8, 0.05)", padding: "10px", borderRadius: "8px", border: "1px solid rgba(234, 179, 8, 0.2)", marginTop: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ fontSize: 10, color: "#eab308", fontWeight: "bold" }}>☀️ STATUS SOLAR</span>
-                    <span style={{ fontSize: 12, color: "#fff", fontWeight: "bold" }}>{d.battery_percent}%</span>
+                <div style={{ background: "rgba(234, 179, 8, 0.08)", padding: "12px", borderRadius: "10px", border: "1px solid rgba(234, 179, 8, 0.2)", marginTop: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 10, color: "#eab308", fontWeight: 800 }}>☀️ STATUS SOLAR</span>
+                    <span style={{ fontSize: 14, color: "#fff", fontWeight: 800, textShadow: "0 0 10px rgba(234,179,8,0.5)" }}>{d.battery_percent}%</span>
                   </div>
-                  <div style={{ height: 4, background: "rgba(255,255,255,0.1)", borderRadius: 2, overflow: "hidden", marginBottom: 8 }}>
-                    <div style={{ height: "100%", width: `${d.battery_percent}%`, background: d.battery_percent > 20 ? "#22c55e" : "#ef4444", transition: "width 0.5s ease" }} />
+                  <div style={{ height: 6, background: "rgba(255,255,255,0.1)", borderRadius: 3, overflow: "hidden", marginBottom: 10 }}>
+                    <div style={{ height: "100%", width: `${d.battery_percent}%`, background: d.battery_percent > 20 ? "#22c55e" : "#ef4444", transition: "width 0.5s ease", boxShadow: "0 0 10px rgba(34,197,94,0.5)" }} />
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <div>
-                      <span style={{ fontSize: 8, color: "#a1a1aa", display: "block" }}>PAINEL</span>
-                      <span style={{ fontSize: 10, color: "#fff" }}>{d.solar_voltage}V</span>
+                      <span style={{ fontSize: 9, color: "#94a3b8", display: "block", fontWeight: 700 }}>PAINEL</span>
+                      <span style={{ fontSize: 12, color: "#fff", fontWeight: 700 }}>{d.solar_voltage}V</span>
                     </div>
                     <div>
-                      <span style={{ fontSize: 8, color: "#a1a1aa", display: "block" }}>BATERIA</span>
-                      <span style={{ fontSize: 10, color: "#fff" }}>{d.battery_voltage}V</span>
+                      <span style={{ fontSize: 9, color: "#94a3b8", display: "block", fontWeight: 700 }}>BATERIA</span>
+                      <span style={{ fontSize: 12, color: "#fff", fontWeight: 700 }}>{d.battery_voltage}V</span>
                     </div>
                   </div>
                 </div>
               )}
 
               {d.monitor_port > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 10, color: "#4a6080" }}>PORTA</span>
-                  <span style={{ fontSize: 10, color: "#38bdf8", fontWeight: 700 }}>{d.monitor_port}</span>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, marginTop: 10 }}>
+                  <span style={{ fontSize: 10, color: "#64748b", fontWeight: 700 }}>PORTA</span>
+                  <span style={{ fontSize: 11, color: "#38bdf8", fontWeight: 800 }}>{d.monitor_port}</span>
                 </div>
               )}
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 10, color: "#4a6080" }}>LATÊNCIA</span>
-                <span style={{ fontSize: 10, color: "#22c55e", fontWeight: 700 }}>{d.last_latency ? `${Math.round(d.last_latency)}ms` : "—"}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: d.monitor_port > 0 ? 0 : 10 }}>
+                <span style={{ fontSize: 10, color: "#64748b", fontWeight: 700 }}>LATÊNCIA</span>
+                <span style={{ fontSize: 11, color: "#22c55e", fontWeight: 800, textShadow: "0 0 10px rgba(34,197,94,0.4)" }}>{d.last_latency ? `${Math.round(d.last_latency)}ms` : "—"}</span>
               </div>
             </div>
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 16, minHeight: 24 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20, minHeight: 24 }}>
               {(d.tags || []).map((t) => <span key={t} style={{ ...S.tag, margin: 0 }}>#{t}</span>)}
             </div>
 
-            <div style={{ display: "flex", gap: 8 }}>
-              <button style={{ ...S.btnSm(), flex: 1 }} onClick={() => setModal(d)}>✏️ EDITAR</button>
-              <button style={{ ...S.btnSm(), flex: 1 }} onClick={() => testConn(d.id)} disabled={testing === d.id}>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button style={{ ...S.btnSm(), flex: 1, padding: "8px 0" }} onClick={() => setModal(d)}>✏️ EDITAR</button>
+              <button style={{ ...S.btnSm(), flex: 1, padding: "8px 0" }} onClick={() => testConn(d.id)} disabled={testing === d.id}>
                 {testing === d.id ? "..." : "📡 TESTAR"}
               </button>
               <div style={{ position: "relative" }}>
-                <button style={S.btnSm()} onClick={() => {
+                <button style={{ ...S.btnSm(), padding: "8px 12px" }} onClick={() => {
                   const el = document.getElementById(`menu-${d.id}`);
                   el.style.display = el.style.display === "none" ? "block" : "none";
                 }}>⋮</button>
                 <div id={`menu-${d.id}`} style={{ 
                   display: "none", position: "absolute", bottom: "100%", right: 0, 
-                  background: "#1e293b", border: "1px solid rgba(255,255,255,0.1)", 
-                  borderRadius: 8, padding: 4, zIndex: 10, boxShadow: "0 10px 20px rgba(0,0,0,0.5)" 
+                  background: "rgba(15,23,42,0.95)", backdropFilter: "blur(10px)", border: "1px solid rgba(56,189,248,0.3)", 
+                  borderRadius: 12, padding: 8, zIndex: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.8)", marginBottom: 8
                 }}>
-                  <button style={{ ...S.btnSm(), display: "block", width: "100%", textAlign: "left", marginBottom: 4 }} onClick={() => regenToken(d.id)}>🔑 TOKEN</button>
-                  <button style={{ ...S.btnSm("danger"), display: "block", width: "100%", textAlign: "left" }} onClick={() => del(d.id)}>🗑️ EXCLUIR</button>
+                  <button style={{ ...S.btnSm(), display: "block", width: "100%", textAlign: "left", marginBottom: 6, border: "none", background: "transparent" }} onClick={() => regenToken(d.id)}>🔑 GERAR TOKEN</button>
+                  <button style={{ ...S.btnSm("danger"), display: "block", width: "100%", textAlign: "left", border: "none", background: "transparent" }} onClick={() => del(d.id)}>🗑️ EXCLUIR DEVICE</button>
                 </div>
               </div>
             </div>
@@ -1608,21 +1622,21 @@ function TriggersPage({ userRole }) {
         <button style={S.btn("primary")} onClick={openNew}>+ Novo Trigger</button>
       </div>
 
-      <div style={{ ...S.card, overflowX: "auto" }}>
-        <table style={S.table}>
-          <thead><tr>{["Status","Nome","Métrica","Limite",userRole==="superadmin"?"Cliente":null,"Ações"].filter(Boolean).map((h) => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+      <div style={{ ...S.card, overflowX: "auto", padding: 0 }}>
+        <table style={{ ...S.table, margin: 0, borderSpacing: 0 }}>
+          <thead><tr>{["Status","Nome","Métrica","Limite",userRole==="superadmin"?"Cliente":null,"Ações"].filter(Boolean).map((h) => <th key={h} style={{ ...S.th, padding: "16px 20px" }}>{h}</th>)}</tr></thead>
           <tbody>
-            {triggers.length === 0 && <tr><td colSpan={6} style={{ ...S.td, textAlign: "center", color: "#3a5070", padding: 28 }}>Nenhum trigger</td></tr>}
-            {triggers.map((t) => (
-              <tr key={t.id}>
-                <td style={S.td}><span style={S.badge(t.enabled?"#22c55e":"#3a5070")}>{t.enabled?"● ativo":"○ inativo"}</span></td>
-                <td style={{ ...S.td, fontWeight: 600, color: "#f1f5f9" }}>{t.name}</td>
-                <td style={S.td}>{EXPRESSIONS.find((e) => e.value===t.expression)?.label||t.expression}</td>
-                <td style={{ ...S.td, color: "#f59e0b", fontWeight: 700 }}>{t.threshold}</td>
-                {userRole === "superadmin" && <td style={S.td}><span style={{ fontSize: 10, color: "#38bdf8" }}>{clients.find((c) => c.id===t.client_id)?.name||"Todos"}</span></td>}
-                <td style={S.td}>
-                  <div style={{ display: "flex", gap: 5 }}>
-                    <button style={S.btnSm()} onClick={() => toggle(t)}>{t.enabled?"⏸":"▶️"}</button>
+            {triggers.length === 0 && <tr><td colSpan={6} style={{ ...S.td, textAlign: "center", color: "#3a5070", padding: 40 }}>Nenhum trigger configurado</td></tr>}
+            {triggers.map((t, i) => (
+              <tr key={t.id} style={{ background: i % 2 === 0 ? "transparent" : "rgba(15,23,42,0.2)", transition: "background 0.2s", ":hover": { background: "rgba(56,189,248,0.05)" } }}>
+                <td style={{ ...S.td, border: "none", padding: "16px 20px" }}><span style={S.badge(t.enabled?"#22c55e":"#4a6080")}>{t.enabled?"● ativo":"○ inativo"}</span></td>
+                <td style={{ ...S.td, border: "none", fontWeight: 700, color: "#f1f5f9", fontSize: 14 }}>{t.name}</td>
+                <td style={{ ...S.td, border: "none", color: "#cbd5e1" }}>{EXPRESSIONS.find((e) => e.value===t.expression)?.label||t.expression}</td>
+                <td style={{ ...S.td, border: "none", color: "#f59e0b", fontWeight: 800, fontSize: 15 }}>{t.threshold}</td>
+                {userRole === "superadmin" && <td style={{ ...S.td, border: "none" }}><span style={{ fontSize: 11, color: "#38bdf8", fontWeight: 600 }}>{clients.find((c) => c.id===t.client_id)?.name||"Todos"}</span></td>}
+                <td style={{ ...S.td, border: "none" }}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button style={S.btnSm(t.enabled ? "ghost" : "primary")} onClick={() => toggle(t)}>{t.enabled?"⏸":"▶️"}</button>
                     <button style={S.btnSm()} onClick={() => openEdit(t)}>✏️</button>
                     <button style={S.btnSm("danger")} onClick={() => del(t.id)}>🗑️</button>
                   </div>
@@ -1654,8 +1668,8 @@ function TriggersPage({ userRole }) {
                 </select>
               </div>
             )}
-            <div style={S.fg}><label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#94a3b8", cursor: "pointer" }}><input type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} />Trigger ativo</label></div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div style={S.fg}><label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cbd5e1", cursor: "pointer", fontWeight: 600 }}><input type="checkbox" style={{ accentColor: "#38bdf8", transform: "scale(1.2)" }} checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} /> Trigger ativo</label></div>
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24 }}>
               <button style={S.btn("ghost")} onClick={() => setModal(null)}>Cancelar</button>
               <button style={S.btn("primary")} onClick={save}>Salvar</button>
             </div>
