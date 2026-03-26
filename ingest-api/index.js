@@ -647,7 +647,13 @@ app.delete("/triggers/:id", auth, async (req, res) => {
 app.get("/alerts", auth, async (req, res) => {
   const cid = clientFilter(req);
   let query = `
-    SELECT a.*, d.name as device_name, d.mac_address, d.serial_number, c.name as client_name
+    SELECT a.*,
+           d.name as device_name,
+           d.mac_address,
+           d.serial_number,
+           d.description as device_description,
+           d.location as device_location,
+           c.name as client_name
     FROM alerts a
     LEFT JOIN devices d ON d.id = a.device_id
     LEFT JOIN clients c ON c.id = d.client_id

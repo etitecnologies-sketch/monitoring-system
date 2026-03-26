@@ -106,6 +106,20 @@ export default function AlertsPage() {
                   ):null}
                   <code style={{color:"#64748b",fontSize:13,background:"rgba(0,0,0,0.3)",padding:"3px 8px",borderRadius:6}}>{a.host}</code>
                 </div>
+                {(a.device_location || a.device_description) && (
+                  <div style={{marginTop:8,fontSize:14,color:"#94a3b8",display:"flex",flexWrap:"wrap",gap:10}}>
+                    {a.device_location && (
+                      <span style={{background:"rgba(0,242,255,0.08)",border:"1px solid rgba(0,242,255,0.18)",color:"#b6fbff",padding:"4px 10px",borderRadius:999,fontWeight:600}}>
+                        {a.device_location}
+                      </span>
+                    )}
+                    {a.device_description && (
+                      <span style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",padding:"4px 10px",borderRadius:10}}>
+                        {a.device_description}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               {a.expression !== "offline" && (
                 <div style={{textAlign:"right",minWidth:120,background:"rgba(0,0,0,0.2)",padding:"10px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.03)"}}>
