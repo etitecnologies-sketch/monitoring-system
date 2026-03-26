@@ -79,6 +79,7 @@ async function initDB() {
           city TEXT DEFAULT '', state TEXT DEFAULT '', plan TEXT DEFAULT 'basic',
           status TEXT DEFAULT 'active', telegram_token TEXT DEFAULT '',
           telegram_chat_id TEXT DEFAULT '', alert_email TEXT DEFAULT '',
+          wa_instance TEXT DEFAULT '', wa_token TEXT DEFAULT '', wa_number TEXT DEFAULT '',
           notes TEXT DEFAULT '', created_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS users (
@@ -108,7 +109,22 @@ async function initDB() {
           latency_ms FLOAT DEFAULT 0, status TEXT DEFAULT 'online',
           solar_voltage FLOAT DEFAULT 0, battery_voltage FLOAT DEFAULT 0,
           battery_percent FLOAT DEFAULT 0, charge_current FLOAT DEFAULT 0,
-          load_current FLOAT DEFAULT 0
+          load_current FLOAT DEFAULT 0, uptime_seconds BIGINT DEFAULT 0,
+          load_avg FLOAT DEFAULT 0, processes INT DEFAULT 0, temperature FLOAT DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS triggers (
+          id SERIAL PRIMARY KEY, name TEXT NOT NULL, expression TEXT NOT NULL,
+          threshold FLOAT NOT NULL, enabled BOOLEAN DEFAULT TRUE,
+          client_id INT REFERENCES clients(id) ON DELETE CASCADE,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS alerts (
+          id BIGSERIAL PRIMARY KEY, trigger_id INT REFERENCES triggers(id) ON DELETE CASCADE,
+          device_id INT REFERENCES devices(id) ON DELETE SET NULL,
+          host TEXT NOT NULL, expression TEXT NOT NULL, value FLOAT NOT NULL,
+          threshold FLOAT NOT NULL, alert_type TEXT NOT NULL DEFAULT 'threshold',
+          fired_at TIMESTAMPTZ DEFAULT NOW(), resolved_at TIMESTAMPTZ,
+          client_id INT REFERENCES clients(id) ON DELETE CASCADE
       );
       CREATE TABLE IF NOT EXISTS events (
           id BIGSERIAL PRIMARY KEY, time TIMESTAMPTZ DEFAULT NOW(),
@@ -119,6 +135,19 @@ async function initDB() {
       );
     `);
     
+    // Default triggers if none exist
+    const triggerCount = await pool.query("SELECT COUNT(*) FROM triggers");
+    if (parseInt(triggerCount.rows[0].count) === 0) {
+      await pool.query(`
+        INSERT INTO triggers (name, expression, threshold) VALUES
+        ('High CPU', 'cpu', 80),
+        ('High Memory', 'memory', 85),
+        ('High Disk', 'disk_percent', 90),
+        ('High Latency', 'latency_ms', 500),
+        ('High Load', 'load_avg', 5)
+      `);
+    }
+
     const migrations = [
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS ddns_address TEXT DEFAULT ''",
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_port INT DEFAULT 0",
@@ -129,7 +158,13 @@ async function initDB() {
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_snmp BOOLEAN DEFAULT FALSE",
       "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS disk_percent FLOAT DEFAULT 0",
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS mac_address TEXT DEFAULT ''",
-      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS serial_number TEXT DEFAULT ''"
+      "ALTER TABLE devices ADD COLUMN IF NOT EXISTS serial_number TEXT DEFAULT ''",
+      "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS uptime_seconds BIGINT DEFAULT 0",
+      "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS load_avg FLOAT DEFAULT 0",
+      "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS processes INT DEFAULT 0",
+      "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS temperature FLOAT DEFAULT 0",
+      "ALTER TABLE triggers ADD COLUMN IF NOT EXISTS client_id INT REFERENCES clients(id) ON DELETE CASCADE",
+      "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS client_id INT REFERENCES clients(id) ON DELETE CASCADE"
     ];
     for (let m of migrations) { await pool.query(m).catch(() => {}); }
     
@@ -424,6 +459,42 @@ app.delete("/solar/inverters/:id", auth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/solar/brands", auth, (req, res) => res.json([
+  { value: "growatt", label: "Growatt" },
+  { value: "fronius", label: "Fronius" },
+  { value: "solarman", label: "Solarman" },
+  { value: "sma", label: "SMA" },
+  { value: "goodwe", label: "GoodWe" },
+  { value: "huawei", label: "Huawei" }
+]));
+
+app.get("/solar/inverters/:id/metrics", auth, async (req, res) => {
+  const hours = parseInt(req.query.hours) || 24;
+  const r = await pool.query(`
+    SELECT * FROM solar_metrics 
+    WHERE inverter_id=$1 AND time > NOW() - interval '${hours} hours'
+    ORDER BY time ASC
+  `, [req.params.id]);
+  res.json(r.rows);
+});
+
+app.get("/solar/summary", auth, async (req, res) => {
+  const cid = clientFilter(req);
+  let query = `
+    SELECT 
+      SUM(power_w) as total_power,
+      SUM(energy_today_kwh) as total_energy_today,
+      SUM(revenue_today) as total_revenue_today
+    FROM solar_metrics sm
+    JOIN solar_inverters si ON si.id = sm.inverter_id
+    WHERE sm.time = (SELECT MAX(time) FROM solar_metrics WHERE inverter_id = sm.inverter_id)
+  `;
+  const params = [];
+  if (cid) { query += " AND si.client_id=$1"; params.push(cid); }
+  const r = await pool.query(query, params);
+  res.json(r.rows[0]);
+});
+
 app.post("/devices/:id/regenerate-token", auth, async (req, res) => {
   const token = crypto.randomBytes(32).toString("hex");
   const r = await pool.query("UPDATE devices SET token=$1 WHERE id=$2 RETURNING token", [token, req.params.id]);
@@ -493,6 +564,19 @@ app.post("/clients/:id/users", auth, superadmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/clients/:id/stats", auth, superadmin, async (req, res) => {
+  const id = req.params.id;
+  const total = await pool.query("SELECT COUNT(*) FROM devices WHERE client_id=$1", [id]);
+  const online = await pool.query("SELECT COUNT(*) FROM devices WHERE client_id=$1 AND status='online'", [id]);
+  const alerts = await pool.query("SELECT COUNT(*) FROM metrics m JOIN devices d ON d.id=m.device_id WHERE d.client_id=$1 AND m.status='offline' AND m.time > NOW() - interval '24 hours'", [id]);
+  res.json({
+    total: parseInt(total.rows[0].count),
+    online: parseInt(online.rows[0].count),
+    offline: parseInt(total.rows[0].count) - parseInt(online.rows[0].count),
+    alerts: parseInt(alerts.rows[0].count)
+  });
+});
+
 // ── Metrics ──────────────────────────────────────────────────
 app.get("/metrics/:host", auth, async (req, res) => {
   const hours = parseInt(req.query.hours) || 24;
@@ -502,6 +586,56 @@ app.get("/metrics/:host", auth, async (req, res) => {
     ORDER BY time ASC
   `, [req.params.host]);
   res.json(r.rows);
+});
+
+app.get("/hosts", auth, async (req, res) => {
+  const cid = clientFilter(req);
+  let query = "SELECT DISTINCT host as name FROM metrics WHERE time > NOW() - interval '24 hours'";
+  const params = [];
+  if (cid) {
+    query = `
+      SELECT DISTINCT m.host as name 
+      FROM metrics m
+      JOIN devices d ON d.id = m.device_id
+      WHERE d.client_id = $1 AND m.time > NOW() - interval '24 hours'
+    `;
+    params.push(cid);
+  }
+  const r = await pool.query(query, params);
+  res.json(r.rows);
+});
+
+app.get("/triggers", auth, async (req, res) => {
+  const cid = clientFilter(req);
+  let query = "SELECT * FROM triggers";
+  const params = [];
+  if (cid) { query += " WHERE client_id=$1 OR client_id IS NULL"; params.push(cid); }
+  const r = await pool.query(query, params);
+  res.json(r.rows);
+});
+
+app.post("/triggers", auth, async (req, res) => {
+  const { name, expression, threshold, client_id } = req.body;
+  const cid = req.user.role === "superadmin" ? (client_id || null) : req.user.client_id;
+  const r = await pool.query(
+    "INSERT INTO triggers (name, expression, threshold, client_id) VALUES ($1, $2, $3, $4) RETURNING *",
+    [name, expression, threshold, cid]
+  );
+  res.status(201).json(r.rows[0]);
+});
+
+app.put("/triggers/:id", auth, async (req, res) => {
+  const { name, expression, threshold, enabled } = req.body;
+  const r = await pool.query(
+    "UPDATE triggers SET name=$1, expression=$2, threshold=$3, enabled=$4 WHERE id=$5 RETURNING *",
+    [name, expression, threshold, enabled !== false, req.params.id]
+  );
+  res.json(r.rows[0]);
+});
+
+app.delete("/triggers/:id", auth, async (req, res) => {
+  await pool.query("DELETE FROM triggers WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
 });
 
 app.get("/alerts", auth, async (req, res) => {
@@ -615,11 +749,15 @@ app.post("/push", metricsLimiter, async (req, res) => {
     // Atualizamos o last_seen e deixamos o processor enviar o alerta de online se necessário
     await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [dev.id]);
     
+    // Garante que o host existe na tabela hosts e pega o id
+    const hr = await pool.query("INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id", [dev.name]);
+    const hostId = hr.rows[0].id;
+
     // Grava métrica de latência e solar
     await pool.query(`
-      INSERT INTO metrics (time, host, device_id, latency_ms, status, solar_voltage, battery_voltage, battery_percent, charge_current, load_current)
-      VALUES (NOW(), $1, $2, $3, 'online', $5, $6, $7, $8, $9)
-    `, [dev.name, dev.id, finalLatency, solar_voltage, battery_voltage, battery_percent, charge_current, load_current]);
+      INSERT INTO metrics (time, host_id, host, device_id, latency_ms, status, solar_voltage, battery_voltage, battery_percent, charge_current, load_current)
+      VALUES (NOW(), $1, $2, $3, $4, 'online', $5, $6, $7, $8, $9)
+    `, [hostId, dev.name, dev.id, finalLatency, solar_voltage, battery_voltage, battery_percent, charge_current, load_current]);
 
     // 2. Registrar Eventos
     if (finalEventType) {
@@ -687,7 +825,7 @@ app.get("/events", auth, async (req, res) => {
 
 app.post("/metrics", metricsLimiter, async (req, res) => {
   const token = req.headers["x-device-token"] || req.body.device_token;
-  const { host, cpu, memory, latency_ms, status } = req.body;
+  const { host, cpu, memory, latency_ms, status, disk_percent, uptime_seconds, load_avg, processes, temperature } = req.body;
   try {
     const dr = await pool.query("SELECT id, client_id FROM devices WHERE token=$1", [token]);
     if (dr.rows.length === 0) return res.status(401).json({ error: "Invalid token" });
@@ -696,14 +834,28 @@ app.post("/metrics", metricsLimiter, async (req, res) => {
     // Deixamos o processor atualizar o status para 'online' e enviar o alerta
     await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [devId]);
     const hr = await pool.query("INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id", [host]);
-    await pool.query("INSERT INTO metrics (time, host_id, host, device_id, cpu, memory, latency_ms, status) VALUES (NOW(), $1, $2, $3, $4, $5, $6, 'online')", 
-      [hr.rows[0].id, host, devId, cpu||0, memory||0, latency_ms||0]);
+    const hostId = hr.rows[0].id;
+    
+    await pool.query(`
+      INSERT INTO metrics (
+        time, host_id, host, device_id, cpu, memory, disk_percent, 
+        latency_ms, status, uptime_seconds, load_avg, processes, temperature
+      ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, 'online', $8, $9, $10, $11)
+    `, [
+      hostId, host, devId, cpu||0, memory||0, disk_percent||0, 
+      latency_ms||0, uptime_seconds||0, load_avg||0, processes||0, temperature||0
+    ]);
     
     // Publish to WebSocket
     if (WEBSOCKET_URL) {
-      fetch(`${WEBSOCKET_URL}/publish`, {
+      const wsPublishUrl = `${WEBSOCKET_URL.replace(/\/$/, "")}/publish`;
+      fetch(wsPublishUrl, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ host, cpu, memory, latency_ms, device_id: devId, client_id: cid, time: new Date().toISOString() }),
+        body: JSON.stringify({ 
+          host, cpu, memory, disk_percent, latency_ms, uptime_seconds, 
+          load_avg, processes, temperature, device_id: devId, client_id: cid, 
+          time: new Date().toISOString() 
+        }),
       }).catch(() => {});
     }
 

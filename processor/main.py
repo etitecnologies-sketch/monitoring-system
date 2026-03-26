@@ -49,8 +49,13 @@ WA_NUMBER   = sanitize(os.getenv("WA_NUMBER", ""))
 WA_API_URL  = sanitize(os.getenv("WA_API_URL", ""))
 
 # Limpeza e log de inicialização
-print(f"DEBUG: TG_TOKEN={TG_TOKEN[:10]}... | TG_CHAT_ID={TG_CHAT_ID}")
-print(f"DEBUG: DB_URL={DATABASE_URL[:20]}...")
+if not TG_TOKEN or not TG_CHAT_ID:
+    logger.warning("⚠️ ALERTA: TELEGRAM_TOKEN ou TELEGRAM_CHAT_ID globais não configurados!")
+else:
+    logger.info(f"✅ Telegram Global Configurado: {TG_TOKEN[:10]}... | ChatID: {TG_CHAT_ID}")
+
+if not DATABASE_URL:
+    logger.error("❌ ERRO CRÍTICO: DATABASE_URL não configurada!")
 
 device_online_state = {}
 alert_cooldown_map  = {}
@@ -140,40 +145,44 @@ def send_whatsapp(message, instance=None, token=None, number=None):
 def send_telegram(message, token=None, chat_id=None):
     """Envia para o telegram do cliente ou do superadmin com tratamento de erro e escape HTML"""
     targets = []
-    # Se o cliente tem Telegram configurado
+    
+    # Adiciona o target do cliente se configurado
     if token and chat_id:
         targets.append((str(token).strip(), str(chat_id).strip()))
     
-    # Se o superadmin tem Telegram configurado (Global)
+    # Adiciona o target global se configurado (Superadmin)
     if TG_TOKEN and TG_CHAT_ID:
         targets.append((str(TG_TOKEN).strip(), str(TG_CHAT_ID).strip()))
     
     if not targets:
-        logger.error("Nenhum target de Telegram configurado!")
+        logger.error("Nenhum target de Telegram configurado (Token ou ChatID vazios)!")
         return
         
     for tok, cid in set(targets):
         try:
-            # Garante que o token não tenha o prefixo 'bot' duplicado
-            clean_tok = tok.replace("bot", "") if tok.startswith("bot") else tok
+            # Garante que o token esteja no formato correto para a URL
+            # Telegram espera o formato bot<token>/sendMessage
+            clean_tok = tok[3:] if tok.lower().startswith("bot") else tok
             url = f"https://api.telegram.org/bot{clean_tok}/sendMessage"
             
             payload = {"chat_id": cid, "text": message, "parse_mode": "HTML"}
-            logger.info(f"Tentando enviar Telegram para {cid}...")
+            logger.info(f"Enviando Telegram para {cid}...")
             
             r = requests.post(url, json=payload, timeout=15)
             
             if r.status_code == 200:
-                logger.info(f"Telegram ✓ enviado com sucesso para {cid}")
+                logger.info(f"Telegram ✓ enviado para {cid}")
             else:
-                logger.error(f"Telegram erro {r.status_code} para {cid}: {r.text}")
+                logger.error(f"Telegram erro {r.status_code} ({cid}): {r.text}")
                 # Se falhou por causa do HTML, tenta enviar como texto puro como fallback
                 if "can't parse entities" in r.text.lower():
-                    logger.info(f"Tentando fallback para texto puro para {cid}...")
+                    logger.info(f"Tentando fallback para texto puro (sem HTML) para {cid}...")
                     payload.pop("parse_mode")
                     r2 = requests.post(url, json=payload, timeout=15)
                     if r2.status_code == 200:
-                        logger.info(f"Telegram ✓ enviado com fallback (texto puro) para {cid}")
+                        logger.info(f"Telegram ✓ enviado com fallback para {cid}")
+                    else:
+                        logger.error(f"Telegram fallback também falhou {r2.status_code}: {r2.text}")
         except Exception as e:
             logger.error(f"Telegram exceção ao enviar para {cid}: {e}")
 
@@ -423,11 +432,11 @@ def check_offline_devices(cur, conn):
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
         except Exception as e: logger.error(f"Erro Queda Timeout: {e}"); conn.rollback()
 
-    # 2. DETECÇÃO DE RETORNO POR TIMEOUT
+    # 2. DETECÇÃO DE RETORNO POR TIMEOUT (Sinal de vida recebido)
     cur.execute(f"""
         UPDATE devices 
         SET status = 'online'
-        WHERE status = 'offline'
+        WHERE status IN ('offline', 'pending')
           AND last_seen IS NOT NULL
           AND EXTRACT(EPOCH FROM (NOW() - last_seen)) < {OFFLINE_TIMEOUT}
         RETURNING id, name, client_id, device_type, mac_address, serial_number;
@@ -603,15 +612,31 @@ def check_new_events(cur, conn):
             send_whatsapp(msg.replace("<b>", "*").replace("</b>", "*"), wa_inst, wa_tok, wa_num)
 
 def evaluate_once():
-    # Print de batimento cardíaco para provar que o script não travou
-    print(f"[{now_display()}] --- CICLO DE MONITORAMENTO ATIVO ---") 
+    # Batimento cardíaco com resumo rápido
     with get_conn() as conn:
         cur=conn.cursor()
+        
+        # 1. Checar dispositivos via Ping/TCP (Monitoramento Ativo)
         check_ping_devices(cur,conn)
+        
+        # 2. Checar dispositivos via Timeout (Monitoramento Passivo - Agent/Push)
         check_offline_devices(cur,conn)
+        
+        # 3. Analisar novos eventos (Intrusão, Movimento, etc.)
         check_new_events(cur,conn)
+        
+        # 4. Enviar resumo de status se necessário
         send_status_summary(cur)
+        
+        # 5. Avaliar gatilhos de métricas (CPU, RAM, etc.)
         evaluate_triggers(cur,conn)
+        
+        # Log de progresso
+        cur.execute("SELECT COUNT(*) FROM devices")
+        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM devices WHERE status='online'")
+        online = cur.fetchone()[0]
+        print(f"[{now_display()}] Monitoramento OK. Devices: {total} (Online: {online})")
 
 def main():
     logger.info(f"{'='*52}")
