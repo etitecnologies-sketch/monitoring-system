@@ -647,17 +647,29 @@ app.delete("/triggers/:id", auth, async (req, res) => {
 app.get("/alerts", auth, async (req, res) => {
   const cid = clientFilter(req);
   let query = `
-    SELECT m.*, d.name as device_name, d.mac_address, d.serial_number, c.name as client_name
-    FROM metrics m
-    JOIN devices d ON d.id = m.device_id
-    JOIN clients c ON c.id = d.client_id
-    WHERE m.status = 'offline' AND m.time > NOW() - interval '24 hours'
+    SELECT a.*, d.name as device_name, d.mac_address, d.serial_number, c.name as client_name
+    FROM alerts a
+    LEFT JOIN devices d ON d.id = a.device_id
+    LEFT JOIN clients c ON c.id = d.client_id
+    WHERE a.fired_at > NOW() - interval '24 hours'
   `;
   const params = [];
-  if (cid) { params.push(cid); query += ` AND d.client_id=$1`; }
-  query += " ORDER BY m.time DESC LIMIT 50";
-  const r = await pool.query(query, params);
-  res.json(r.rows.map(row => ({ ...row, alert_type: 'offline' })));
+  if (cid) { params.push(cid); query += ` AND a.client_id=$1`; }
+  query += " ORDER BY a.fired_at DESC LIMIT 50";
+  
+  try {
+    const r = await pool.query(query, params);
+    // Format the response to match what the frontend expects
+    const formattedAlerts = r.rows.map(row => ({
+      ...row,
+      time: row.fired_at,
+      status: row.resolved_at ? 'resolved' : 'firing'
+    }));
+    res.json(formattedAlerts);
+  } catch (err) {
+    console.error("Error fetching alerts:", err);
+    res.status(500).json({ error: "Failed to fetch alerts" });
+  }
 });
 
 // ── PUSH UNIVERSAL (Recepcionista Cloud) ─────────────────────
