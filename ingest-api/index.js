@@ -11,6 +11,7 @@ const dns = require("dns").promises;
 const xmlparser = require("express-xml-bodyparser");
 
 const app = express();
+app.set("trust proxy", 1);
 
 const escapeHtml = (text) => {
   if (!text) return "";
