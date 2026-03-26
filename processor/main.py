@@ -454,6 +454,8 @@ def check_offline_devices(cur, conn):
     for dev_id, dev_name, client_id, dtype, mac, sn in recovered:
         logger.info(f"✅ RETORNO POR SINAL: {dev_name}")
         try:
+            cur.execute("UPDATE alerts SET resolved_at=NOW() WHERE device_id=%s AND alert_type='offline' AND resolved_at IS NULL", (dev_id,))
+            conn.commit()
             tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
             
             # Formato solicitado
@@ -467,6 +469,34 @@ def check_offline_devices(cur, conn):
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
         except Exception as e: logger.error(f"Erro Retorno Timeout: {e}")
+
+    cur.execute(f"""
+        SELECT a.id, d.id, d.name, d.client_id, d.device_type, d.mac_address, d.serial_number
+        FROM alerts a
+        JOIN devices d ON d.id = a.device_id
+        WHERE a.alert_type = 'offline'
+          AND a.resolved_at IS NULL
+          AND d.last_seen IS NOT NULL
+          AND EXTRACT(EPOCH FROM (NOW() - d.last_seen)) < {OFFLINE_TIMEOUT}
+    """)
+    recovered_by_alert = cur.fetchall()
+    for alert_id, dev_id, dev_name, client_id, dtype, mac, sn in recovered_by_alert:
+        logger.info(f"✅ RETORNO POR SINAL: {dev_name}")
+        try:
+            cur.execute("UPDATE alerts SET resolved_at=NOW() WHERE id=%s", (alert_id,))
+            cur.execute("UPDATE devices SET status='online' WHERE id=%s", (dev_id,))
+            conn.commit()
+            tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
+            msg=(f"✅ <b>{escape_html(dev_name)}</b>\n"
+                 f"Normalizado: O dispositivo voltou a responder ao sistema\n\n"
+                 f"Host: <b>{escape_html(dev_name)}</b>\n"
+                 f"Data da Normalização: <b>{now_display()}</b>\n"
+                 f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
+                 f"Descrição: {escape_html(cl_name or 'NexusWatch')}")
+            send_telegram(msg, tg_tok, tg_cid)
+            send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
+        except Exception as e:
+            logger.error(f"Erro Retorno Timeout: {e}")
 
 
 def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None,client_id=None):
