@@ -703,6 +703,7 @@ function ClientsPage() {
   const [userModal, setUserModal] = useState(null);
   const [newUser, setNewUser] = useState({ username: "", password: "" });
   const [search, setSearch] = useState("");
+  const [hoverId, setHoverId] = useState(null);
 
   const load = () => api("/clients").then(setClients).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -754,7 +755,20 @@ function ClientsPage() {
               <tr><td colSpan={8} style={{ ...S.td, textAlign: "center", color: "#3a5070", padding: 40 }}>Nenhum cliente cadastrado</td></tr>
             )}
             {filtered.map((c, i) => (
-              <tr key={c.id} style={{ background: i % 2 === 0 ? "transparent" : "rgba(15,23,42,0.2)", transition: "background 0.2s", ":hover": { background: "rgba(56,189,248,0.05)" } }}>
+              <tr
+                key={c.id}
+                onMouseEnter={() => setHoverId(c.id)}
+                onMouseLeave={() => setHoverId(null)}
+                style={{
+                  background: hoverId === c.id
+                    ? "rgba(56,189,248,0.06)"
+                    : i % 2 === 0
+                      ? "transparent"
+                      : "rgba(15,23,42,0.20)",
+                  transition: "background 0.2s, box-shadow 0.2s",
+                  boxShadow: hoverId === c.id ? "inset 0 0 0 1px rgba(56,189,248,0.18)" : "none",
+                }}
+              >
                 <td style={{ ...S.td, border: "none", padding: "16px 20px" }}>
                   <div style={{ fontWeight: 800, color: "#f1f5f9", fontSize: 14 }}>{c.name}</div>
                   <div style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace", marginTop: 2 }}>{c.document || "—"}</div>
@@ -1153,10 +1167,25 @@ function Dashboard({ userRole }) {
 
   const byType = DEVICE_TYPES.map((t) => ({ ...t, count: devices.filter((d) => d.device_type === t.value).length })).filter((t) => t.count > 0);
 
+  const statTiles = [
+    ...(userRole === "superadmin" ? [{ icon: "🏢", label: "Clientes", value: stats.clients, color: "#a78bfa" }] : []),
+    { icon: "🧩", label: "Total Devices", value: stats.devices, color: "#38bdf8" },
+    { icon: "🟢", label: "Online", value: stats.online, color: "#22c55e" },
+    { icon: "🔴", label: "Offline", value: stats.offline, color: "#ef4444" },
+    { icon: "🚨", label: "Alertas 24h", value: alerts.length, color: "#f59e0b" },
+  ];
+
   return (
     <div style={{ padding: isMobile ? "0 5px" : 0 }}>
-      <div style={S.pageTitle}>📊 Dashboard</div>
-      <div style={S.pageSub}>Visão geral — NexusWatch Pro</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+        <div>
+          <div style={S.pageTitle}>📊 Dashboard</div>
+          <div style={S.pageSub}>Visão geral — NexusWatch Pro</div>
+        </div>
+        <button onClick={load} style={{ ...S.btn("ghost"), padding: "10px 16px", borderRadius: 12 }}>
+          ↻ Atualizar
+        </button>
+      </div>
 
       <div style={{ 
         display: "grid", 
@@ -1164,16 +1193,28 @@ function Dashboard({ userRole }) {
         gap: isMobile ? 10 : 20, 
         marginBottom: 20 
       }}>
-        {[
-          ...(userRole === "superadmin" ? [{ label: "Clientes", value: stats.clients, color: "#a78bfa" }] : []),
-          { label: "Total Devices", value: stats.devices, color: "#38bdf8" },
-          { label: "Online", value: stats.online, color: "#22c55e" },
-          { label: "Offline", value: stats.offline, color: "#ef4444" },
-          { label: "Alertas 24h", value: alerts.length, color: "#f59e0b" },
-        ].map((s) => (
-          <div key={s.label} style={{ ...S.statCard(s.color), padding: isMobile ? 12 : 20 }}>
-            <div style={{ ...S.statVal(s.color), fontSize: isMobile ? 24 : 32 }}>{s.value}</div>
-            <div style={{ ...S.statLabel, fontSize: isMobile ? 9 : 11 }}>{s.label}</div>
+        {statTiles.map((s) => (
+          <div
+            key={s.label}
+            style={{
+              ...S.statCard(s.color),
+              padding: isMobile ? 12 : 20,
+              background: `radial-gradient(120% 120% at 10% 10%, ${s.color}12 0%, rgba(10, 15, 26, 0.62) 55%, rgba(10, 15, 26, 0.62) 100%)`,
+              border: `1px solid ${s.color}30`,
+              boxShadow: `0 0 22px ${s.color}12, 0 8px 30px rgba(0,0,0,0.35)`,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 12, background: `${s.color}18`, border: `1px solid ${s.color}33`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, boxShadow: `0 0 14px ${s.color}22` }}>
+                  {s.icon}
+                </div>
+                <div style={{ ...S.statLabel, fontSize: isMobile ? 9 : 11, marginTop: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {s.label}
+                </div>
+              </div>
+              <div style={{ ...S.statVal(s.color), fontSize: isMobile ? 24 : 34 }}>{s.value}</div>
+            </div>
           </div>
         ))}
       </div>
