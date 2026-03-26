@@ -595,7 +595,7 @@ def check_new_events(cur, conn):
 
     cur.execute("""
         SELECT e.id, e.event_type, e.channel, e.description, e.severity, e.time,
-               d.name as device_name, d.client_id, d.device_type, d.mac_address, d.serial_number
+               d.name as device_name, d.client_id, d.device_type, d.mac_address, d.serial_number, d.description, d.location
         FROM events e
         JOIN devices d ON d.id = e.device_id
         WHERE e.id > %s
@@ -604,14 +604,20 @@ def check_new_events(cur, conn):
     
     events = cur.fetchall()
     for ev in events:
-        eid, etype, channel, desc, sev, etime, dname, cid, dtype, mac, sn = ev
+        eid, etype, channel, desc, sev, etime, dname, cid, dtype, mac, sn, ddesc, dloc = ev
         last_event_id = eid
+
+        cooldown_key = f"event:{etype}"
+        if (sev or "").lower() != "critical" and is_in_cooldown(dname, cooldown_key):
+            continue
         
         # Prepara a mensagem de alerta analítico
         edname = escape_html(dname)
         etype_display = escape_html(etype.replace("_", " ").upper())
         edesc = escape_html(desc)
         etime_str = etime.astimezone(TIMEZONE_DISPLAY).strftime("%d/%m/%Y %H:%M:%S")
+        eddesc = escape_html(ddesc) if ddesc else ""
+        edloc = escape_html(dloc) if dloc else ""
         
         # Ícone baseado na severidade ou tipo
         icon = "🎬"
@@ -621,20 +627,33 @@ def check_new_events(cur, conn):
 
         tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, cid)
         
-        msg = (f"{icon} <b>ALERTA ANALÍTICO</b>\n"
-               f"━━━━━━━━━━━━━━━━━━━━\n"
-               f"📷 <b>{edname}</b>\n"
-               f"Evento: <b>{etype_display}</b>\n"
-               f"Canal: {channel}\n"
-               f"Horário: {etime_str}\n"
-               f"━━━━━━━━━━━━━━━━━━━━\n"
-               f"📝 {edesc}\n"
-               f"📍 {escape_html(cl_name or 'NexusWatch')}")
+        msg = (
+            f"{icon} <b>ALERTA ANALÍTICO</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📷 <b>{edname}</b>\n"
+            f"Evento: <b>{etype_display}</b>\n"
+            f"Canal: {channel}\n"
+            f"Horário: {etime_str}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📝 {edesc}\n"
+            + (f"📍 Local: {edloc}\n" if edloc else "")
+            + (f"🏢 Empresa: {eddesc}\n" if eddesc else "")
+            + f"👤 Cliente: {escape_html(cl_name or 'NexusWatch')}"
+        )
         
         send_telegram(msg, tg_tok, tg_cid)
-        # Opcional: enviar para WhatsApp se for crítico
-        if sev.lower() == "critical":
+        if cl_email:
+            try:
+                subject = f"[NexusWatch] {etype_display} - {dname}"
+                body = msg.replace("<b>", "").replace("</b>", "")
+                send_email(cl_email, subject, body)
+            except Exception as e:
+                logger.error(f"Email send error: {e}")
+
+        if (sev or "").lower() == "critical":
             send_whatsapp(msg.replace("<b>", "*").replace("</b>", "*"), wa_inst, wa_tok, wa_num)
+        
+        set_cooldown(dname, cooldown_key)
 
 def evaluate_once():
     # Batimento cardíaco com resumo rápido
