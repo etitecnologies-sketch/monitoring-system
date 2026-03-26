@@ -435,14 +435,16 @@ def check_offline_devices(cur, conn):
             
             # Formato solicitado pelo usuário
             if not has_open_offline:
-                msg=(f"❌ <b>{escape_html(dev_name)}</b>\n"
-                     f"Problema: O dispositivo está indisponível há mais de {OFFLINE_TIMEOUT}s\n\n"
-                     f"Host: <b>{escape_html(dev_name)}</b>\n"
-                     f"Data do Evento: <b>{now_display()}</b>\n"
-                     f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
-                     f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
-                     +(f"Empresa: {escape_html(device_description)}\n" if device_description else "")
-                     f"Indicação: Verifique a conectividade e energia do dispositivo.")
+                msg=(
+                    f"❌ <b>{escape_html(dev_name)}</b>\n"
+                    f"Problema: O dispositivo está indisponível há mais de {OFFLINE_TIMEOUT}s\n\n"
+                    f"Host: <b>{escape_html(dev_name)}</b>\n"
+                    f"Data do Evento: <b>{now_display()}</b>\n"
+                    f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
+                    f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
+                    + (f"Empresa: {escape_html(device_description)}\n" if device_description else "")
+                    + "Indicação: Verifique a conectividade e energia do dispositivo."
+                )
                 
                 send_telegram(msg, tg_tok, tg_cid)
                 send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
@@ -468,13 +470,15 @@ def check_offline_devices(cur, conn):
             cur.execute("UPDATE devices SET status='online' WHERE id=%s", (dev_id,))
             conn.commit()
             tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
-            msg=(f"✅ <b>{escape_html(dev_name)}</b>\n"
-                 f"Normalizado: O dispositivo voltou a responder ao sistema\n\n"
-                 f"Host: <b>{escape_html(dev_name)}</b>\n"
-                 f"Data da Normalização: <b>{now_display()}</b>\n"
-                 f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
-                 f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
-                 +(f"Empresa: {escape_html(device_description)}" if device_description else ""))
+            msg=(
+                f"✅ <b>{escape_html(dev_name)}</b>\n"
+                f"Normalizado: O dispositivo voltou a responder ao sistema\n\n"
+                f"Host: <b>{escape_html(dev_name)}</b>\n"
+                f"Data da Normalização: <b>{now_display()}</b>\n"
+                f"Detalhes do Equipamento: {escape_html(dtype or 'other')} - {escape_html(mac or sn or 'N/A')}\n"
+                f"Descrição: {escape_html(cl_name or 'NexusWatch')}\n"
+                + (f"Empresa: {escape_html(device_description)}" if device_description else "")
+            )
             send_telegram(msg, tg_tok, tg_cid)
             send_whatsapp(msg.replace("<b>","*").replace("</b>","*"), wa_inst, wa_tok, wa_num)
             set_cooldown(dev_name, "recovered")
