@@ -164,7 +164,10 @@ async function initDB() {
       "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS processes INT DEFAULT 0",
       "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS temperature FLOAT DEFAULT 0",
       "ALTER TABLE triggers ADD COLUMN IF NOT EXISTS client_id INT REFERENCES clients(id) ON DELETE CASCADE",
-      "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS client_id INT REFERENCES clients(id) ON DELETE CASCADE"
+      "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS client_id INT REFERENCES clients(id) ON DELETE CASCADE",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_instance TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_token TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_number TEXT DEFAULT ''"
     ];
     for (let m of migrations) { await pool.query(m).catch(() => {}); }
     
@@ -746,8 +749,8 @@ app.post("/push", metricsLimiter, async (req, res) => {
     console.log(`[Push] SINAL DE VIDA: ${dev.name} (${token})`);
 
     // 1. Atualizar Sinal de Vida (Heartbeat)
-    // Atualizamos o last_seen e deixamos o processor enviar o alerta de online se necessário
-    await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [dev.id]);
+    // Atualizamos o last_seen e o status para online imediatamente para o Dashboard
+    await pool.query("UPDATE devices SET last_seen=NOW(), status='online' WHERE id=$1", [dev.id]);
     
     // Garante que o host existe na tabela hosts e pega o id
     const hr = await pool.query("INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id", [dev.name]);
@@ -973,9 +976,8 @@ const tcpServer = net.createServer((socket) => {
           
           console.log(`[TCP] SINAL DE VIDA: ${dev.name} (${dev.serial_number || dev.mac_address})`);
           
-          // Atualiza sinal de vida (last_seen) - NÃO força status 'online'
-          // Deixa o Processor Python detectar que o sinal chegou e mudar para online
-          await pool.query("UPDATE devices SET last_seen=NOW() WHERE id=$1", [dev.id]);
+          // Atualiza sinal de vida (last_seen) e status para online imediatamente
+          await pool.query("UPDATE devices SET last_seen=NOW(), status='online' WHERE id=$1", [dev.id]);
           
           // Garante que o host existe na tabela hosts e pega o id
           const hr = await pool.query("INSERT INTO hosts (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id", [dev.name]);
