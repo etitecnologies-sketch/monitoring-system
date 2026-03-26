@@ -413,7 +413,7 @@ def check_offline_devices(cur, conn):
             if WA_API_URL: # Usamos WA_API_URL apenas como flag para saber se o servidor tem rede
                 try:
                     # Tenta avisar o websocket via ingest-api (proxy) ou direto se estiver no mesmo docker
-                    ws_url = os.getenv("WEBSOCKET_URL", "http://websocket:3001").replace(/\/$/, "")
+                    ws_url = os.getenv("WEBSOCKET_URL", "http://websocket:3001").rstrip("/")
                     requests.post(f"{ws_url}/publish", json={
                         "type": "METRIC",
                         "device_id": dev_id,
