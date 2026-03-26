@@ -72,7 +72,7 @@ function HostCard({ host, data, deviceMap }) {
     setLoading(true);
     const rows = await api.metrics(host, 24);
     setHistory(rows.reverse().map(r=>({
-      time: new Date(r.time).toLocaleTimeString(),
+      time: new Date(r.time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
       cpu:  +parseFloat(r.cpu||0).toFixed(1),
       mem:  +parseFloat(r.memory||0).toFixed(1),
       disk: +parseFloat(r.disk_percent||0).toFixed(1),
@@ -83,7 +83,7 @@ function HostCard({ host, data, deviceMap }) {
   useEffect(()=>{ if(tab==="history") loadHistory(); },[tab]);
 
   const realtimeData = (data.history||[]).slice(-40).map(h=>({
-    time: new Date(h.time).toLocaleTimeString(),
+    time: new Date(h.time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     cpu:  +parseFloat(h.cpu||0).toFixed(1),
     mem:  +parseFloat(h.memory||0).toFixed(1),
     disk: +parseFloat(h.disk_percent||0).toFixed(1),

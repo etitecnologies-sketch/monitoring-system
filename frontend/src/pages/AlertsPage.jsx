@@ -118,8 +118,12 @@ export default function AlertsPage() {
                 </div>
               )}
               <div style={{textAlign:"right",minWidth:150,borderLeft:"1px solid rgba(255,255,255,0.05)",paddingLeft:20}}>
-                <div style={{fontSize:15,color:"#cbd5e1",fontWeight:600,marginBottom:4}}>{new Date(a.fired_at).toLocaleDateString()}</div>
-                <div style={{fontSize:15,color:"#64748b",fontFamily:"monospace"}}>{new Date(a.fired_at).toLocaleTimeString()}</div>
+                <div style={{fontSize:15,color:"#cbd5e1",fontWeight:600,marginBottom:4}}>
+                  {new Date(a.fired_at).toLocaleDateString("pt-BR")}
+                </div>
+                <div style={{fontSize:15,color:"#64748b",fontFamily:"monospace"}}>
+                  {new Date(a.fired_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </div>
               </div>
             </div>
           );
