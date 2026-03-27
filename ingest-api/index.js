@@ -415,6 +415,7 @@ app.post("/devices", auth, async (req, res) => {
 });
 
 app.put("/devices/:id", auth, async (req, res) => {
+  console.log("PUT /devices/:id req.body:", req.body);
   const { 
     name, description, location, device_type, ip_address, tags, 
     ddns_address, monitor_port, monitor_ping, monitor_agent, notes,
@@ -831,6 +832,7 @@ app.post("/clients", auth, superadmin, async (req, res) => {
 });
 
 app.put("/clients/:id", auth, superadmin, async (req, res) => {
+  console.log("PUT /clients/:id req.body:", req.body);
   const { 
     name, document, email, phone, address, city, state, 
     plan, status, telegram_token, telegram_chat_id, 

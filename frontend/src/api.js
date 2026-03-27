@@ -62,6 +62,7 @@ async function apiFetch(
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
+      cache: "no-store",
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
