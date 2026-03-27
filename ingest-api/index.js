@@ -795,14 +795,43 @@ app.get("/clients", auth, superadmin, async (req, res) => {
 });
 
 app.post("/clients", auth, superadmin, async (req, res) => {
-  const { name, document, email, phone, plan, status } = req.body;
-  const r = await pool.query("INSERT INTO clients (name, document, email, phone, plan, status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *", [name, document||"", email||"", phone||"", plan||"basic", status||"active"]);
+  const { 
+    name, document, email, phone, address, city, state, 
+    plan, status, telegram_token, telegram_chat_id, 
+    alert_email, wa_instance, wa_token, wa_number, notes 
+  } = req.body;
+  const r = await pool.query(`
+    INSERT INTO clients (
+      name, document, email, phone, address, city, state, 
+      plan, status, telegram_token, telegram_chat_id, 
+      alert_email, wa_instance, wa_token, wa_number, notes
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *
+  `, [
+    name, document||"", email||"", phone||"", address||"", city||"", state||"", 
+    plan||"basic", status||"active", telegram_token||"", telegram_chat_id||"", 
+    alert_email||"", wa_instance||"", wa_token||"", wa_number||"", notes||""
+  ]);
   res.status(201).json(r.rows[0]);
 });
 
 app.put("/clients/:id", auth, superadmin, async (req, res) => {
-  const { name, document, email, phone, plan, status } = req.body;
-  const r = await pool.query("UPDATE clients SET name=$1, document=$2, email=$3, phone=$4, plan=$5, status=$6 WHERE id=$7 RETURNING *", [name, document, email, phone, plan, status, req.params.id]);
+  const { 
+    name, document, email, phone, address, city, state, 
+    plan, status, telegram_token, telegram_chat_id, 
+    alert_email, wa_instance, wa_token, wa_number, notes 
+  } = req.body;
+  const r = await pool.query(`
+    UPDATE clients SET 
+      name=$1, document=$2, email=$3, phone=$4, address=$5, city=$6, state=$7, 
+      plan=$8, status=$9, telegram_token=$10, telegram_chat_id=$11, 
+      alert_email=$12, wa_instance=$13, wa_token=$14, wa_number=$15, notes=$16
+    WHERE id=$17 RETURNING *
+  `, [
+    name, document||"", email||"", phone||"", address||"", city||"", state||"", 
+    plan||"basic", status||"active", telegram_token||"", telegram_chat_id||"", 
+    alert_email||"", wa_instance||"", wa_token||"", wa_number||"", notes||"",
+    req.params.id
+  ]);
   res.json(r.rows[0]);
 });
 
