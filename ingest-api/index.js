@@ -977,16 +977,15 @@ app.post("/push", metricsLimiter, async (req, res) => {
   const xmlData = body.eventnotificationalert || body.event || {};
   const latency = Date.now() - start;
 
-  const token = req.headers["x-device-token"] || 
-                body.token || 
-                req.query.token || 
-                body.ID || 
-                body.SN || 
-                body.SerialNumber || 
-                body.MAC ||
-                xmlData.macaddress || 
-                xmlData.serialnumber ||
-                req.query.id;
+  const token =
+    req.headers["x-device-token"] ||
+    body.token ||
+    req.query.token ||
+    body.SN ||
+    body.SerialNumber ||
+    xmlData.serialnumber ||
+    req.query.sn ||
+    req.query.serial;
 
   const { 
     status, cpu, memory, disk, 
@@ -1040,17 +1039,14 @@ app.post("/push", metricsLimiter, async (req, res) => {
   }
 
   try {
-    // Busca por Token ou MAC ou SN (limpando pontuação do MAC se necessário)
-    const cleanToken = String(token).replace(/[:-]/g, "").toUpperCase();
-    
+    // Busca por Token (device.token) ou SN (devices.serial_number)
     const dr = await pool.query(`
       SELECT id, client_id, name 
       FROM devices 
       WHERE token=$1 
-         OR UPPER(REPLACE(REPLACE(mac_address, ':', ''), '-', '')) = $2
          OR serial_number = $1
       LIMIT 1
-    `, [token, cleanToken]);
+    `, [token]);
 
     if (dr.rows.length === 0) {
       console.log(`[Push] Token/MAC/SN não encontrado: ${token}`);
@@ -1270,23 +1266,19 @@ const tcpServer = net.createServer((socket) => {
 
   socket.on("data", async (data) => {
     try {
-      // Converte o buffer em string para procurar o Serial Number ou MAC
+      // Converte o buffer em string para procurar o Serial Number
       const rawData = data.toString("utf8");
-      const hexData = data.toString("hex").toUpperCase();
       
       console.log(`[TCP] Dados recebidos: ${rawData.substring(0, 50)}...`);
 
-      // Busca no banco por qualquer dispositivo que tenha o SN ou MAC presente nos dados binários
+      // Busca no banco por qualquer dispositivo que tenha o SN presente nos dados binários
       // O protocolo da Intelbras envia o SN em texto plano em algum momento
-      const devicesRes = await pool.query("SELECT id, name, serial_number, mac_address, client_id, status FROM devices");
+      const devicesRes = await pool.query("SELECT id, name, serial_number, client_id, status FROM devices");
       
       for (const dev of devicesRes.rows) {
-        const cleanMac = dev.mac_address ? dev.mac_address.replace(/[:-]/g, "").toUpperCase() : null;
-        
-        if ((dev.serial_number && rawData.includes(dev.serial_number)) || 
-            (cleanMac && hexData.includes(cleanMac))) {
+        if (dev.serial_number && rawData.includes(dev.serial_number)) {
           
-          console.log(`[TCP] SINAL DE VIDA: ${dev.name} (${dev.serial_number || dev.mac_address})`);
+          console.log(`[TCP] SINAL DE VIDA: ${dev.name} (${dev.serial_number})`);
           
           // Atualiza sinal de vida (last_seen) e status para online imediatamente
           await pool.query("UPDATE devices SET last_seen=NOW(), status='online' WHERE id=$1", [dev.id]);
