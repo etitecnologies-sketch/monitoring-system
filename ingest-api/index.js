@@ -189,9 +189,21 @@ async function initDB() {
       "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS alert_type TEXT NOT NULL DEFAULT 'threshold'",
       "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS fired_at TIMESTAMPTZ DEFAULT NOW()",
       "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS document TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS email TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS city TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS state TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'basic'",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS telegram_token TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS alert_email TEXT DEFAULT ''",
       "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_instance TEXT DEFAULT ''",
       "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_token TEXT DEFAULT ''",
-      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_number TEXT DEFAULT ''"
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_number TEXT DEFAULT ''",
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''"
     ];
     for (let m of migrations) { await pool.query(m).catch(() => {}); }
     
