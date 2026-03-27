@@ -407,21 +407,22 @@ app.put("/devices/:id", auth, async (req, res) => {
     name, description, location, device_type, ip_address, tags, 
     ddns_address, monitor_port, monitor_ping, monitor_agent, notes,
     snmp_community, snmp_version, ssh_user, ssh_port,
-    mac_address, serial_number
+    mac_address, serial_number, client_id
   } = req.body;
+  const cid = req.user.role === "superadmin" ? (client_id || null) : req.user.client_id;
   try {
     const r = await pool.query(`
       UPDATE devices SET 
         name=$1, description=$2, location=$3, device_type=$4, ip_address=$5, tags=$6, 
         ddns_address=$7, monitor_port=$8, monitor_ping=$9, monitor_agent=$10, notes=$11,
         snmp_community=$12, snmp_version=$13, ssh_user=$14, ssh_port=$15,
-        mac_address=$16, serial_number=$17
-      WHERE id=$18 RETURNING *
+        mac_address=$16, serial_number=$17, client_id=$18
+      WHERE id=$19 RETURNING *
     `, [
       name, description||"", location||"", device_type||"other", ip_address||"", tags||[], 
       ddns_address||"", parseInt(monitor_port)||0, monitor_ping!==false, monitor_agent!==false, notes||"",
       snmp_community||"public", snmp_version||"2c", ssh_user||"", parseInt(ssh_port)||22,
-      mac_address||"", serial_number||"",
+      mac_address||"", serial_number||"", cid,
       req.params.id
     ]);
     res.json(r.rows[0]);
