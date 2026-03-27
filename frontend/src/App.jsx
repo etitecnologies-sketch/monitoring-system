@@ -827,9 +827,77 @@ function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose 
     ? { ...EMPTY_DEVICE, ...device, tags: device.tags || [] } 
     : { ...EMPTY_DEVICE }
   );
+  const [onvif, setOnvif] = useState({
+    enabled: false,
+    host: "",
+    port: 80,
+    username: "",
+    password: "",
+    password_set: false,
+    passwordTouched: false,
+    passwordCleared: false,
+    channel_map_text: "{}",
+  });
+  const [onvifLoaded, setOnvifLoaded] = useState(false);
+  const [rtsp, setRtsp] = useState({
+    enabled: false,
+    username: "",
+    password: "",
+    password_set: false,
+    passwordTouched: false,
+    passwordCleared: false,
+    streams_text: "[]",
+  });
+  const [rtspLoaded, setRtspLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const setOnvifField = (k, v) => setOnvif((o) => ({ ...o, [k]: v }));
+  const setRtspField = (k, v) => setRtsp((o) => ({ ...o, [k]: v }));
+
+  useEffect(() => {
+    let alive = true;
+    if (!device?.id) return;
+    api(`/devices/${device.id}/onvif`)
+      .then((d) => {
+        if (!alive) return;
+        setOnvif({
+          enabled: !!d.enabled,
+          host: d.host || "",
+          port: d.port || 80,
+          username: d.username || "",
+          password: "",
+          password_set: !!d.password_set,
+          passwordTouched: false,
+          passwordCleared: false,
+          channel_map_text: JSON.stringify(d.channel_map || {}, null, 2),
+        });
+        setOnvifLoaded(true);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [device?.id]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!device?.id) return;
+    api(`/devices/${device.id}/rtsp`)
+      .then((d) => {
+        if (!alive) return;
+        setRtsp({
+          enabled: !!d.enabled,
+          username: d.username || "",
+          password: "",
+          password_set: !!d.password_set,
+          passwordTouched: false,
+          passwordCleared: false,
+          streams_text: JSON.stringify(d.streams || [], null, 2),
+        });
+        setRtspLoaded(true);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [device?.id]);
 
   const save = async () => {
     if (!form.name) return setErr("Nome obrigatório");
@@ -842,8 +910,53 @@ function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose 
     };
 
     try {
-      if (device?.id) await api(`/devices/${device.id}`, { method: "PUT", body: JSON.stringify(payload) });
-      else await api("/devices", { method: "POST", body: JSON.stringify(payload) });
+      let saved;
+      if (device?.id) saved = await api(`/devices/${device.id}`, { method: "PUT", body: JSON.stringify(payload) });
+      else saved = await api("/devices", { method: "POST", body: JSON.stringify(payload) });
+
+      const id = device?.id || saved?.id;
+      const wantsOnvif =
+        !!onvif.enabled ||
+        !!(onvif.host || "").trim() ||
+        !!(onvif.username || "").trim() ||
+        !!onvif.passwordTouched ||
+        !!onvif.passwordCleared ||
+        (onvif.channel_map_text || "").trim() !== "{}";
+
+      if (id && (onvifLoaded || wantsOnvif)) {
+        let channel_map = {};
+        try { channel_map = JSON.parse(onvif.channel_map_text || "{}"); } catch { throw { error: "channel_map inválido (JSON)" }; }
+        const body = {
+          enabled: !!onvif.enabled,
+          host: (onvif.host || "").trim(),
+          port: parseInt(onvif.port) || 80,
+          username: onvif.username || "",
+          channel_map,
+        };
+        if (onvif.passwordCleared) body.password = "";
+        else if (onvif.passwordTouched) body.password = onvif.password || "";
+        await api(`/devices/${id}/onvif`, { method: "PUT", body: JSON.stringify(body) });
+      }
+
+      const wantsRtsp =
+        !!rtsp.enabled ||
+        !!(rtsp.username || "").trim() ||
+        !!rtsp.passwordTouched ||
+        !!rtsp.passwordCleared ||
+        (rtsp.streams_text || "").trim() !== "[]";
+
+      if (id && (rtspLoaded || wantsRtsp)) {
+        let streams = [];
+        try { streams = JSON.parse(rtsp.streams_text || "[]"); } catch { throw { error: "streams inválido (JSON)" }; }
+        const body = {
+          enabled: !!rtsp.enabled,
+          username: rtsp.username || "",
+          streams,
+        };
+        if (rtsp.passwordCleared) body.password = "";
+        else if (rtsp.passwordTouched) body.password = rtsp.password || "";
+        await api(`/devices/${id}/rtsp`, { method: "PUT", body: JSON.stringify(body) });
+      }
       onSave();
     } catch (e) { setErr(e.error || "Erro ao salvar dados"); }
     finally { setLoading(false); }
@@ -928,6 +1041,111 @@ function DeviceModal({ device, clients, userRole, userClientId, onSave, onClose 
           <div style={S.fg}><label style={S.label}>Porta SSH</label><input style={S.input} type="number" value={form.ssh_port} onChange={(e) => set("ssh_port", parseInt(e.target.value)||22)} /></div>
         </div>
         <div style={S.fg}><label style={S.label}>Notas</label><textarea style={{ ...S.input, minHeight: 50, resize: "vertical" }} value={form.notes} onChange={(e) => set("notes", e.target.value)} /></div>
+
+        <div style={S.divider} />
+        <div style={S.sectionTitle}>ONVIF (Eventos & Vídeo)</div>
+        <div style={{ display: "flex", gap: 18, marginBottom: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#94a3b8", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={onvif.enabled}
+              onChange={(e) => setOnvifField("enabled", e.target.checked)}
+            />
+            Habilitar ONVIF
+          </label>
+        </div>
+
+        <div style={S.grid(2)}>
+          <div style={S.fg}>
+            <label style={S.label}>Host ONVIF</label>
+            <input style={S.input} value={onvif.host} onChange={(e) => setOnvifField("host", e.target.value)} placeholder="192.168.1.100" />
+          </div>
+          <div style={S.fg}>
+            <label style={S.label}>Porta ONVIF</label>
+            <input style={S.input} type="number" value={onvif.port} onChange={(e) => setOnvifField("port", e.target.value)} placeholder="80" />
+          </div>
+        </div>
+        <div style={S.grid(2)}>
+          <div style={S.fg}>
+            <label style={S.label}>Usuário ONVIF</label>
+            <input style={S.input} value={onvif.username} onChange={(e) => setOnvifField("username", e.target.value)} placeholder="admin" />
+          </div>
+          <div style={S.fg}>
+            <label style={S.label}>Senha ONVIF</label>
+            <input
+              style={S.input}
+              type="password"
+              value={onvif.password}
+              onChange={(e) => setOnvif((o) => ({ ...o, password: e.target.value, passwordTouched: true, passwordCleared: false }))}
+              placeholder={onvif.password_set ? "•••••• (já salva)" : "••••••"}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+              <button
+                type="button"
+                style={S.btnSm("ghost")}
+                onClick={() => setOnvif((o) => ({ ...o, password: "", passwordTouched: false, passwordCleared: true, password_set: false }))}
+              >
+                Limpar senha
+              </button>
+            </div>
+          </div>
+        </div>
+        <div style={S.fg}>
+          <label style={S.label}>Channel Map (JSON)</label>
+          <textarea
+            style={{ ...S.input, minHeight: 80, resize: "vertical", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+            value={onvif.channel_map_text}
+            onChange={(e) => setOnvifField("channel_map_text", e.target.value)}
+            placeholder='{"VideoSourceToken_1": 1}'
+          />
+        </div>
+
+        <div style={S.divider} />
+        <div style={S.sectionTitle}>RTSP (Perda/Travamento de Vídeo)</div>
+        <div style={{ display: "flex", gap: 18, marginBottom: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#94a3b8", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={rtsp.enabled}
+              onChange={(e) => setRtspField("enabled", e.target.checked)}
+            />
+            Habilitar RTSP Monitor
+          </label>
+        </div>
+        <div style={S.grid(2)}>
+          <div style={S.fg}>
+            <label style={S.label}>Usuário RTSP (opcional)</label>
+            <input style={S.input} value={rtsp.username} onChange={(e) => setRtspField("username", e.target.value)} placeholder="admin" />
+          </div>
+          <div style={S.fg}>
+            <label style={S.label}>Senha RTSP (opcional)</label>
+            <input
+              style={S.input}
+              type="password"
+              value={rtsp.password}
+              onChange={(e) => setRtsp((o) => ({ ...o, password: e.target.value, passwordTouched: true, passwordCleared: false }))}
+              placeholder={rtsp.password_set ? "•••••• (já salva)" : "••••••"}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+              <button
+                type="button"
+                style={S.btnSm("ghost")}
+                onClick={() => setRtsp((o) => ({ ...o, password: "", passwordTouched: false, passwordCleared: true, password_set: false }))}
+              >
+                Limpar senha
+              </button>
+            </div>
+          </div>
+        </div>
+        <div style={S.fg}>
+          <label style={S.label}>Streams (JSON)</label>
+          <textarea
+            style={{ ...S.input, minHeight: 110, resize: "vertical", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+            value={rtsp.streams_text}
+            onChange={(e) => setRtspField("streams_text", e.target.value)}
+            placeholder='[{"channel":1,"name":"Canal 1","url":"rtsp://192.168.1.100:554/...","timeout_seconds":8,"interval_seconds":30,"transport":"tcp"}]'
+          />
+        </div>
 
         {err && <div style={{ color: "#ef4444", fontSize: 11, marginBottom: 10 }}>⚠️ {err}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

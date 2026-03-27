@@ -134,6 +134,26 @@ async function initDB() {
           description TEXT, severity TEXT DEFAULT 'info',
           is_read BOOLEAN DEFAULT FALSE
       );
+      CREATE TABLE IF NOT EXISTS onvif_configs (
+          device_id INT PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+          enabled BOOLEAN DEFAULT FALSE,
+          host TEXT NOT NULL DEFAULT '',
+          port INT DEFAULT 80,
+          username TEXT DEFAULT '',
+          password_enc TEXT DEFAULT '',
+          channel_map JSONB DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS rtsp_configs (
+          device_id INT PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+          enabled BOOLEAN DEFAULT FALSE,
+          username TEXT DEFAULT '',
+          password_enc TEXT DEFAULT '',
+          streams JSONB DEFAULT '[]'::jsonb,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
     
     // Default triggers if none exist
@@ -246,6 +266,45 @@ const WA_API_URL_GLOBAL = sanitize(process.env.WA_API_URL || "");
 const WA_INSTANCE_GLOBAL = sanitize(process.env.WA_INSTANCE || "");
 const WA_TOKEN_GLOBAL = sanitize(process.env.WA_TOKEN || "");
 const WA_NUMBER_GLOBAL = sanitize(process.env.WA_NUMBER || "");
+const COLLECTOR_KEY = sanitize(process.env.COLLECTOR_KEY || "");
+const ONVIF_CRED_SECRET = process.env.ONVIF_CRED_SECRET || JWT_SECRET;
+const ONVIF_CRED_KEY = crypto.createHash("sha256").update(String(ONVIF_CRED_SECRET)).digest();
+
+function encOnvif(text) {
+  if (!text) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", ONVIF_CRED_KEY, iv);
+  const ciphertext = Buffer.concat([cipher.update(String(text), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString("base64")}.${tag.toString("base64")}.${ciphertext.toString("base64")}`;
+}
+
+function decOnvif(payload) {
+  if (!payload) return "";
+  const parts = String(payload).split(".");
+  if (parts.length !== 3) return "";
+  try {
+    const iv = Buffer.from(parts[0], "base64");
+    const tag = Buffer.from(parts[1], "base64");
+    const ciphertext = Buffer.from(parts[2], "base64");
+    const decipher = crypto.createDecipheriv("aes-256-gcm", ONVIF_CRED_KEY, iv);
+    decipher.setAuthTag(tag);
+    const plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return plain.toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+async function assertDeviceAccess(req, deviceId) {
+  const r = await pool.query("SELECT id, client_id FROM devices WHERE id=$1", [deviceId]);
+  if (r.rows.length === 0) return { ok: false, status: 404, error: "Device not found" };
+  const dev = r.rows[0];
+  if (req.user.role !== "superadmin" && dev.client_id !== req.user.client_id) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+  return { ok: true, device: dev };
+}
 
 // ── Middlewares ──────────────────────────────────────────────
 function auth(req, res, next) {
@@ -373,6 +432,193 @@ app.put("/devices/:id", auth, async (req, res) => {
 app.delete("/devices/:id", auth, async (req, res) => {
   await pool.query("DELETE FROM devices WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
+});
+
+app.get("/devices/:id/onvif", auth, async (req, res) => {
+  const deviceId = parseInt(req.params.id);
+  const access = await assertDeviceAccess(req, deviceId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+  const r = await pool.query("SELECT enabled, host, port, username, channel_map, (password_enc <> '') as password_set FROM onvif_configs WHERE device_id=$1", [deviceId]);
+  if (r.rows.length === 0) {
+    return res.json({ enabled: false, host: "", port: 80, username: "", channel_map: {}, password_set: false });
+  }
+  res.json(r.rows[0]);
+});
+
+app.put("/devices/:id/onvif", auth, async (req, res) => {
+  const deviceId = parseInt(req.params.id);
+  const access = await assertDeviceAccess(req, deviceId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const enabled = req.body.enabled === true;
+  const host = String(req.body.host || "").trim();
+  const port = parseInt(req.body.port) || 80;
+  const username = String(req.body.username || "");
+  const password = req.body.password;
+  let channel_map = req.body.channel_map;
+
+  if (enabled && !host) return res.status(400).json({ error: "Host required" });
+  if (port < 1 || port > 65535) return res.status(400).json({ error: "Invalid port" });
+
+  if (typeof channel_map === "string") {
+    try { channel_map = JSON.parse(channel_map || "{}"); } catch { return res.status(400).json({ error: "Invalid channel_map JSON" }); }
+  }
+  if (!channel_map || typeof channel_map !== "object") channel_map = {};
+
+  const existing = await pool.query("SELECT password_enc FROM onvif_configs WHERE device_id=$1", [deviceId]);
+  let password_enc = existing.rows[0]?.password_enc || "";
+  if (password === "") password_enc = "";
+  else if (typeof password === "string" && password.length > 0) password_enc = encOnvif(password);
+
+  await pool.query(
+    `
+    INSERT INTO onvif_configs (device_id, enabled, host, port, username, password_enc, channel_map, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+    ON CONFLICT (device_id) DO UPDATE SET
+      enabled=EXCLUDED.enabled,
+      host=EXCLUDED.host,
+      port=EXCLUDED.port,
+      username=EXCLUDED.username,
+      password_enc=EXCLUDED.password_enc,
+      channel_map=EXCLUDED.channel_map,
+      updated_at=NOW()
+    `,
+    [deviceId, enabled, host, port, username, password_enc, channel_map]
+  );
+
+  res.json({ ok: true });
+});
+
+app.get("/devices/:id/rtsp", auth, async (req, res) => {
+  const deviceId = parseInt(req.params.id);
+  const access = await assertDeviceAccess(req, deviceId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+  const r = await pool.query("SELECT enabled, username, streams, (password_enc <> '') as password_set FROM rtsp_configs WHERE device_id=$1", [deviceId]);
+  if (r.rows.length === 0) {
+    return res.json({ enabled: false, username: "", streams: [], password_set: false });
+  }
+  res.json(r.rows[0]);
+});
+
+app.put("/devices/:id/rtsp", auth, async (req, res) => {
+  const deviceId = parseInt(req.params.id);
+  const access = await assertDeviceAccess(req, deviceId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const enabled = req.body.enabled === true;
+  const username = String(req.body.username || "");
+  const password = req.body.password;
+  let streams = req.body.streams;
+
+  if (typeof streams === "string") {
+    try { streams = JSON.parse(streams || "[]"); } catch { return res.status(400).json({ error: "Invalid streams JSON" }); }
+  }
+  if (!Array.isArray(streams)) streams = [];
+  streams = streams
+    .filter((s) => s && typeof s === "object")
+    .map((s) => ({
+      channel: parseInt(s.channel) || 0,
+      name: String(s.name || ""),
+      url: String(s.url || "").trim(),
+      enabled: s.enabled !== false,
+      timeout_seconds: parseInt(s.timeout_seconds) || 8,
+      interval_seconds: parseInt(s.interval_seconds) || 30,
+      transport: String(s.transport || "tcp"),
+    }))
+    .filter((s) => s.url);
+
+  const existing = await pool.query("SELECT password_enc FROM rtsp_configs WHERE device_id=$1", [deviceId]);
+  let password_enc = existing.rows[0]?.password_enc || "";
+  if (password === "") password_enc = "";
+  else if (typeof password === "string" && password.length > 0) password_enc = encOnvif(password);
+
+  await pool.query(
+    `
+    INSERT INTO rtsp_configs (device_id, enabled, username, password_enc, streams, updated_at)
+    VALUES ($1,$2,$3,$4,$5,NOW())
+    ON CONFLICT (device_id) DO UPDATE SET
+      enabled=EXCLUDED.enabled,
+      username=EXCLUDED.username,
+      password_enc=EXCLUDED.password_enc,
+      streams=EXCLUDED.streams,
+      updated_at=NOW()
+    `,
+    [deviceId, enabled, username, password_enc, streams]
+  );
+
+  res.json({ ok: true });
+});
+
+app.get("/collector/onvif-config", async (req, res) => {
+  const key = sanitize(req.headers["x-collector-key"] || "");
+  if (!COLLECTOR_KEY) return res.status(503).json({ error: "Collector key not configured" });
+  if (!key || key !== COLLECTOR_KEY) return res.status(401).json({ error: "Unauthorized" });
+
+  const cid = req.query.client_id ? parseInt(req.query.client_id) : null;
+  const params = [];
+  let where = "oc.enabled=TRUE AND oc.host <> ''";
+  if (cid) { params.push(cid); where += ` AND d.client_id=$${params.length}`; }
+
+  const r = await pool.query(
+    `
+    SELECT d.id as device_id, d.name, d.client_id, d.token,
+           oc.host, oc.port, oc.username, oc.password_enc, oc.channel_map
+    FROM onvif_configs oc
+    JOIN devices d ON d.id = oc.device_id
+    WHERE ${where}
+    ORDER BY d.id ASC
+    `,
+    params
+  );
+
+  res.json(
+    r.rows.map((row) => ({
+      device_id: row.device_id,
+      name: row.name,
+      client_id: row.client_id,
+      token: row.token,
+      host: row.host,
+      port: row.port,
+      username: row.username,
+      password: decOnvif(row.password_enc),
+      channel_map: row.channel_map || {},
+    }))
+  );
+});
+
+app.get("/collector/rtsp-config", async (req, res) => {
+  const key = sanitize(req.headers["x-collector-key"] || "");
+  if (!COLLECTOR_KEY) return res.status(503).json({ error: "Collector key not configured" });
+  if (!key || key !== COLLECTOR_KEY) return res.status(401).json({ error: "Unauthorized" });
+
+  const cid = req.query.client_id ? parseInt(req.query.client_id) : null;
+  const params = [];
+  let where = "rc.enabled=TRUE AND jsonb_array_length(rc.streams) > 0";
+  if (cid) { params.push(cid); where += ` AND d.client_id=$${params.length}`; }
+
+  const r = await pool.query(
+    `
+    SELECT d.id as device_id, d.name, d.client_id, d.token,
+           rc.username, rc.password_enc, rc.streams
+    FROM rtsp_configs rc
+    JOIN devices d ON d.id = rc.device_id
+    WHERE ${where}
+    ORDER BY d.id ASC
+    `,
+    params
+  );
+
+  res.json(
+    r.rows.map((row) => ({
+      device_id: row.device_id,
+      name: row.name,
+      client_id: row.client_id,
+      token: row.token,
+      username: row.username,
+      password: decOnvif(row.password_enc),
+      streams: row.streams || [],
+    }))
+  );
 });
 
 // ── Solar Inverters ──────────────────────────────────────────

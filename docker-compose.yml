@@ -85,6 +85,38 @@ services:
     depends_on:
       - ingest-api
       - websocket
+
+  onvif-collector:
+    build: ./onvif-collector
+    restart: unless-stopped
+    environment:
+      INGEST_API_URL: http://ingest-api:3000
+      LOG_LEVEL: INFO
+      ONVIF_REMOTE: "true"
+      COLLECTOR_KEY: ${COLLECTOR_KEY:-}
+      CLIENT_ID: ${CLIENT_ID:-}
+      REMOTE_REFRESH_SECONDS: "60"
+      PULL_TIMEOUT_SECONDS: "10"
+      MESSAGE_LIMIT: "10"
+      RECONNECT_SECONDS: "5"
+    depends_on:
+      ingest-api:
+        condition: service_healthy
+
+  rtsp-monitor:
+    build: ./rtsp-monitor
+    restart: unless-stopped
+    environment:
+      INGEST_API_URL: http://ingest-api:3000
+      LOG_LEVEL: INFO
+      COLLECTOR_KEY: ${COLLECTOR_KEY:-}
+      CLIENT_ID: ${CLIENT_ID:-}
+      REMOTE_REFRESH_SECONDS: "60"
+      DEFAULT_TIMEOUT_SECONDS: "8"
+      DEFAULT_INTERVAL_SECONDS: "30"
+    depends_on:
+      ingest-api:
+        condition: service_healthy
   
   vpn-server:
     image: linuxserver/wireguard:latest

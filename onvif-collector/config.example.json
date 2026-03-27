@@ -1,0 +1,21 @@
+{
+  "ingest_api_url": "http://localhost:3000",
+  "pull_timeout_seconds": 10,
+  "message_limit": 10,
+  "reconnect_seconds": 5,
+  "devices": [
+    {
+      "enabled": true,
+      "name": "DVR 01",
+      "host": "192.168.1.100",
+      "port": 80,
+      "username": "admin",
+      "password": "admin",
+      "token": "COLOQUE_O_TOKEN_DO_DEVICE_AQUI",
+      "channel_map": {
+        "VideoSourceToken_1": 1,
+        "VideoSourceToken_2": 2
+      }
+    }
+  ]
+}
