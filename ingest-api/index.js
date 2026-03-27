@@ -665,8 +665,9 @@ app.post("/solar/inverters", auth, async (req, res) => {
         solarman_token, solarman_app_id, solarman_logger_sn,
         sma_user, sma_pass, sma_plant_id,
         goodwe_user, goodwe_pass, goodwe_station_id,
-        huawei_user, huawei_pass, huawei_station_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+        huawei_user, huawei_pass, huawei_station_id,
+        api_url, api_key
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
       RETURNING *
     `, [
       name, brand, model||"", location||"", parseFloat(capacity_kwp)||0, parseFloat(tariff_kwh)||0.85, cid, notes||"",
@@ -675,7 +676,8 @@ app.post("/solar/inverters", auth, async (req, res) => {
       creds.solarman_token||"", creds.solarman_app_id||"", creds.solarman_logger_sn||"",
       creds.sma_user||"", creds.sma_pass||"", creds.sma_plant_id||"",
       creds.goodwe_user||"", creds.goodwe_pass||"", creds.goodwe_station_id||"",
-      creds.huawei_user||"", creds.huawei_pass||"", creds.huawei_station_id||""
+      creds.huawei_user||"", creds.huawei_pass||"", creds.huawei_station_id||"",
+      creds.api_url||"", creds.api_key||""
     ]);
     res.status(201).json(r.rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -692,8 +694,9 @@ app.put("/solar/inverters/:id", auth, async (req, res) => {
         solarman_token=$13, solarman_app_id=$14, solarman_logger_sn=$15,
         sma_user=$16, sma_pass=$17, sma_plant_id=$18,
         goodwe_user=$19, goodwe_pass=$20, goodwe_station_id=$21,
-        huawei_user=$22, huawei_pass=$23, huawei_station_id=$24
-      WHERE id=$25 RETURNING *
+        huawei_user=$22, huawei_pass=$23, huawei_station_id=$24,
+        api_url=$25, api_key=$26
+      WHERE id=$27 RETURNING *
     `, [
       name, brand, model||"", location||"", parseFloat(capacity_kwp)||0, parseFloat(tariff_kwh)||0.85, notes||"",
       creds.growatt_user||"", creds.growatt_pass||"", creds.growatt_plant_id||"",
@@ -702,6 +705,7 @@ app.put("/solar/inverters/:id", auth, async (req, res) => {
       creds.sma_user||"", creds.sma_pass||"", creds.sma_plant_id||"",
       creds.goodwe_user||"", creds.goodwe_pass||"", creds.goodwe_station_id||"",
       creds.huawei_user||"", creds.huawei_pass||"", creds.huawei_station_id||"",
+      creds.api_url||"", creds.api_key||"",
       req.params.id
     ]);
     res.json(r.rows[0]);
@@ -897,13 +901,11 @@ app.get("/triggers", auth, async (req, res) => {
   res.json(r.rows);
 });
 
-app.post("/triggers", auth, async (req, res) => {
-  const { name, expression, threshold, client_id } = req.body;
+app.post("/triggers", auth, superadmin, async (req, res) => {
+  const { name, expression, threshold, enabled, client_id } = req.body;
   const cid = req.user.role === "superadmin" ? (client_id || null) : req.user.client_id;
-  const r = await pool.query(
-    "INSERT INTO triggers (name, expression, threshold, client_id) VALUES ($1, $2, $3, $4) RETURNING *",
-    [name, expression, threshold, cid]
-  );
+  const isEnabled = enabled !== undefined ? enabled : true;
+  const r = await pool.query("INSERT INTO triggers (name, expression, threshold, enabled, client_id) VALUES ($1,$2,$3,$4,$5) RETURNING *", [name, expression, threshold, isEnabled, cid]);
   res.status(201).json(r.rows[0]);
 });
 
