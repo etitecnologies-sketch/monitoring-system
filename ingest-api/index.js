@@ -984,8 +984,11 @@ app.post("/push", metricsLimiter, async (req, res) => {
     body.SN ||
     body.SerialNumber ||
     xmlData.serialnumber ||
+    body.MAC ||
+    xmlData.macaddress ||
     req.query.sn ||
-    req.query.serial;
+    req.query.serial ||
+    req.query.mac;
 
   const { 
     status, cpu, memory, disk, 
@@ -1039,14 +1042,15 @@ app.post("/push", metricsLimiter, async (req, res) => {
   }
 
   try {
-    // Busca por Token (device.token) ou SN (devices.serial_number)
+    const cleanToken = String(token).replace(/[:-]/g, "").toUpperCase();
     const dr = await pool.query(`
       SELECT id, client_id, name 
       FROM devices 
       WHERE token=$1 
          OR serial_number = $1
+         OR UPPER(REPLACE(REPLACE(mac_address, ':', ''), '-', '')) = $2
       LIMIT 1
-    `, [token]);
+    `, [token, cleanToken]);
 
     if (dr.rows.length === 0) {
       console.log(`[Push] Token/MAC/SN não encontrado: ${token}`);
@@ -1268,17 +1272,20 @@ const tcpServer = net.createServer((socket) => {
     try {
       // Converte o buffer em string para procurar o Serial Number
       const rawData = data.toString("utf8");
+      const hexData = data.toString("hex").toUpperCase();
       
       console.log(`[TCP] Dados recebidos: ${rawData.substring(0, 50)}...`);
 
       // Busca no banco por qualquer dispositivo que tenha o SN presente nos dados binários
       // O protocolo da Intelbras envia o SN em texto plano em algum momento
-      const devicesRes = await pool.query("SELECT id, name, serial_number, client_id, status FROM devices");
+      const devicesRes = await pool.query("SELECT id, name, serial_number, mac_address, client_id, status FROM devices");
       
       for (const dev of devicesRes.rows) {
-        if (dev.serial_number && rawData.includes(dev.serial_number)) {
+        const cleanMac = dev.mac_address ? dev.mac_address.replace(/[:-]/g, "").toUpperCase() : null;
+        
+        if ((dev.serial_number && rawData.includes(dev.serial_number)) || (cleanMac && hexData.includes(cleanMac))) {
           
-          console.log(`[TCP] SINAL DE VIDA: ${dev.name} (${dev.serial_number})`);
+          console.log(`[TCP] SINAL DE VIDA: ${dev.name} (${dev.serial_number || dev.mac_address})`);
           
           // Atualiza sinal de vida (last_seen) e status para online imediatamente
           await pool.query("UPDATE devices SET last_seen=NOW(), status='online' WHERE id=$1", [dev.id]);
