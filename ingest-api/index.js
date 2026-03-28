@@ -742,14 +742,21 @@ app.delete("/solar/inverters/:id", auth, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/solar/brands", auth, (req, res) => res.json([
-  { value: "growatt", label: "Growatt" },
-  { value: "fronius", label: "Fronius" },
-  { value: "solarman", label: "Solarman" },
-  { value: "sma", label: "SMA" },
-  { value: "goodwe", label: "GoodWe" },
-  { value: "huawei", label: "Huawei" }
-]));
+app.get("/solar/brands", auth, (req, res) =>
+  res.json([
+    { value: "growatt", label: "Growatt" },
+    { value: "fronius", label: "Fronius" },
+    { value: "deye", label: "Deye" },
+    { value: "solis", label: "Solis" },
+    { value: "sma", label: "SMA" },
+    { value: "goodwe", label: "GoodWe" },
+    { value: "huawei", label: "Huawei" },
+    { value: "saj", label: "SAJ" },
+    { value: "canadian", label: "Canadian" },
+    { value: "risen", label: "Risen" },
+    { value: "other", label: "Outro" },
+  ])
+);
 
 app.get("/solar/inverters/:id/metrics", auth, async (req, res) => {
   const hours = parseInt(req.query.hours) || 24;
@@ -763,19 +770,46 @@ app.get("/solar/inverters/:id/metrics", auth, async (req, res) => {
 
 app.get("/solar/summary", auth, async (req, res) => {
   const cid = clientFilter(req);
-  let query = `
-    SELECT 
-      SUM(power_w) as total_power,
-      SUM(energy_today_kwh) as total_energy_today,
-      SUM(revenue_today) as total_revenue_today
-    FROM solar_metrics sm
-    JOIN solar_inverters si ON si.id = sm.inverter_id
-    WHERE sm.time = (SELECT MAX(time) FROM solar_metrics WHERE inverter_id = sm.inverter_id)
-  `;
   const params = [];
-  if (cid) { query += " AND si.client_id=$1"; params.push(cid); }
-  const r = await pool.query(query, params);
-  res.json(r.rows[0]);
+  let where = "si.status='active'";
+  if (cid) {
+    params.push(cid);
+    where += ` AND si.client_id=$${params.length}`;
+  }
+
+  const r = await pool.query(
+    `
+    WITH latest AS (
+      SELECT DISTINCT ON (inverter_id)
+        inverter_id,
+        power_w,
+        energy_today_kwh,
+        revenue_today
+      FROM solar_metrics
+      ORDER BY inverter_id, time DESC
+    )
+    SELECT
+      COUNT(si.id)::int as total_inverters,
+      COALESCE(SUM(latest.power_w), 0) as total_power_w,
+      COALESCE(SUM(latest.energy_today_kwh), 0) as energy_today_kwh,
+      COALESCE(SUM(latest.revenue_today), 0) as revenue_today
+    FROM solar_inverters si
+    LEFT JOIN latest ON latest.inverter_id = si.id
+    WHERE ${where}
+    `,
+    params
+  );
+
+  const row = r.rows[0] || {};
+  res.json({
+    total_inverters: Number(row.total_inverters || 0),
+    total_power_w: Number(row.total_power_w || 0),
+    energy_today_kwh: Number(row.energy_today_kwh || 0),
+    revenue_today: Number(row.revenue_today || 0),
+    total_power: Number(row.total_power_w || 0),
+    total_energy_today: Number(row.energy_today_kwh || 0),
+    total_revenue_today: Number(row.revenue_today || 0),
+  });
 });
 
 app.post("/devices/:id/regenerate-token", auth, async (req, res) => {
