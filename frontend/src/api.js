@@ -4,7 +4,7 @@ const rawWsUrl = import.meta.env.VITE_WS_URL || "";
 
 // Limpa aspas, crases e espaços que podem vir do Railway
 const cleanedApiBase = rawApiBase.replace(/["'`\s]/g, "").trim().replace(/\/$/, "");
-const API_BASE = cleanedApiBase || "/api";
+const API_BASE = cleanedApiBase || "";
 const WS_URL = rawWsUrl.replace(/["'`\s]/g, "").trim().replace(/\/$/, "") || 
   (window.location.hostname === "localhost" ? "http://localhost:3001" : 
   `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}/socket.io`);

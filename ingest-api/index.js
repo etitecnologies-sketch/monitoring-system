@@ -9,9 +9,15 @@ require("dotenv").config();
 const net = require("net");
 const dns = require("dns").promises;
 const xmlparser = require("express-xml-bodyparser");
+const path = require("path");
+const fs = require("fs");
 
 const app = express();
 app.set("trust proxy", 1);
+
+const frontendDistDir = path.join(__dirname, "..", "frontend", "dist");
+const frontendIndex = path.join(frontendDistDir, "index.html");
+const hasFrontend = fs.existsSync(frontendIndex);
 
 const escapeHtml = (text) => {
   if (!text) return "";
@@ -33,7 +39,10 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get("/", (req, res) => res.json({ status: "online", service: "NexusWatch API", version: "1.0.3" }));
+app.get("/", (req, res) => {
+  if (hasFrontend) return res.sendFile(frontendIndex);
+  return res.json({ status: "online", service: "NexusWatch API", version: "1.0.3" });
+});
 app.get("/health", async (req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -50,6 +59,10 @@ app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 app.use(xmlparser({ explicitArray: false, normalize: true })); // Suporte para XML (Intelbras/Hikvision)
 app.use(cors({ origin: "*", credentials: true }));
+
+if (hasFrontend) {
+  app.use(express.static(frontendDistDir, { index: false }));
+}
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -1344,6 +1357,13 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 NexusWatch API Online na Porta: ${PORT}`);
   console.log(`=========================================`);
 });
+
+if (hasFrontend) {
+  app.get("*", (req, res, next) => {
+    if (req.method !== "GET") return next();
+    res.sendFile(frontendIndex);
+  });
+}
 
 // Middleware 404 movido para o final de tudo
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
