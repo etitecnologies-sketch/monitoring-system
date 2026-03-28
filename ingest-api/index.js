@@ -812,6 +812,49 @@ app.get("/solar/summary", auth, async (req, res) => {
   });
 });
 
+app.get("/solar/health", auth, async (req, res) => {
+  const cid = clientFilter(req);
+  const params = [];
+  let where = "si.status='active'";
+  if (cid) {
+    params.push(cid);
+    where += ` AND si.client_id=$${params.length}`;
+  }
+
+  const r = await pool.query(
+    `
+    WITH latest AS (
+      SELECT DISTINCT ON (inverter_id)
+        inverter_id,
+        time
+      FROM solar_metrics
+      ORDER BY inverter_id, time DESC
+    )
+    SELECT
+      COUNT(si.id)::int as total_inverters,
+      COUNT(latest.inverter_id)::int as with_data,
+      COUNT(latest.inverter_id) FILTER (WHERE latest.time > NOW() - interval '15 minutes')::int as reporting_15m,
+      MAX(latest.time) as last_update
+    FROM solar_inverters si
+    LEFT JOIN latest ON latest.inverter_id = si.id
+    WHERE ${where}
+    `,
+    params
+  );
+
+  const row = r.rows[0] || {};
+  const lastUpdate = row.last_update ? new Date(row.last_update) : null;
+  const secondsSinceLastUpdate = lastUpdate ? Math.floor((Date.now() - lastUpdate.getTime()) / 1000) : null;
+
+  res.json({
+    total_inverters: Number(row.total_inverters || 0),
+    with_data: Number(row.with_data || 0),
+    reporting_15m: Number(row.reporting_15m || 0),
+    last_update: row.last_update || null,
+    seconds_since_last_update: secondsSinceLastUpdate,
+  });
+});
+
 app.post("/devices/:id/regenerate-token", auth, async (req, res) => {
   const token = crypto.randomBytes(32).toString("hex");
   const r = await pool.query("UPDATE devices SET token=$1 WHERE id=$2 RETURNING token", [token, req.params.id]);
