@@ -659,6 +659,7 @@ def run_solar_monitor():
                    sma_user, sma_pass, sma_plant_id,
                    goodwe_user, goodwe_pass, goodwe_station_id,
                    huawei_user, huawei_pass, huawei_station_id,
+                   saj_user, saj_pass, saj_plant_id,
                    api_url, api_key, api_type, notes
             FROM solar_inverters WHERE status='active'
         """)
@@ -670,6 +671,7 @@ def run_solar_monitor():
                 "sma_user","sma_pass","sma_plant_id",
                 "goodwe_user","goodwe_pass","goodwe_station_id",
                 "huawei_user","huawei_pass","huawei_station_id",
+                "saj_user","saj_pass","saj_plant_id",
                 "api_url","api_key","api_type","notes"]
 
         if not inverters:

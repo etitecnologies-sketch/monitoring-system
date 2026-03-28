@@ -216,7 +216,10 @@ async function initDB() {
       "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_instance TEXT DEFAULT ''",
       "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_token TEXT DEFAULT ''",
       "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_number TEXT DEFAULT ''",
-      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''"
+      "ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
+      "ALTER TABLE solar_inverters ADD COLUMN IF NOT EXISTS saj_user TEXT DEFAULT ''",
+      "ALTER TABLE solar_inverters ADD COLUMN IF NOT EXISTS saj_pass TEXT DEFAULT ''",
+      "ALTER TABLE solar_inverters ADD COLUMN IF NOT EXISTS saj_plant_id TEXT DEFAULT ''"
     ];
     for (let m of migrations) { await pool.query(m).catch(() => {}); }
     
@@ -249,6 +252,9 @@ async function initDB() {
           huawei_user     TEXT DEFAULT '',
           huawei_pass     TEXT DEFAULT '',
           huawei_station_id TEXT DEFAULT '',
+          saj_user        TEXT DEFAULT '',
+          saj_pass        TEXT DEFAULT '',
+          saj_plant_id    TEXT DEFAULT '',
           api_url         TEXT DEFAULT '',
           api_key         TEXT DEFAULT '',
           api_type        TEXT DEFAULT '',
@@ -691,8 +697,9 @@ app.post("/solar/inverters", auth, async (req, res) => {
         sma_user, sma_pass, sma_plant_id,
         goodwe_user, goodwe_pass, goodwe_station_id,
         huawei_user, huawei_pass, huawei_station_id,
+        saj_user, saj_pass, saj_plant_id,
         api_url, api_key
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
       RETURNING *
     `, [
       name, brand, model||"", location||"", parseFloat(capacity_kwp)||0, parseFloat(tariff_kwh)||0.85, cid, notes||"",
@@ -702,6 +709,7 @@ app.post("/solar/inverters", auth, async (req, res) => {
       creds.sma_user||"", creds.sma_pass||"", creds.sma_plant_id||"",
       creds.goodwe_user||"", creds.goodwe_pass||"", creds.goodwe_station_id||"",
       creds.huawei_user||"", creds.huawei_pass||"", creds.huawei_station_id||"",
+      creds.saj_user||"", creds.saj_pass||"", creds.saj_plant_id||"",
       creds.api_url||"", creds.api_key||""
     ]);
     res.status(201).json(r.rows[0]);
@@ -720,8 +728,9 @@ app.put("/solar/inverters/:id", auth, async (req, res) => {
         sma_user=$16, sma_pass=$17, sma_plant_id=$18,
         goodwe_user=$19, goodwe_pass=$20, goodwe_station_id=$21,
         huawei_user=$22, huawei_pass=$23, huawei_station_id=$24,
-        api_url=$25, api_key=$26
-      WHERE id=$27 RETURNING *
+        saj_user=$25, saj_pass=$26, saj_plant_id=$27,
+        api_url=$28, api_key=$29
+      WHERE id=$30 RETURNING *
     `, [
       name, brand, model||"", location||"", parseFloat(capacity_kwp)||0, parseFloat(tariff_kwh)||0.85, notes||"",
       creds.growatt_user||"", creds.growatt_pass||"", creds.growatt_plant_id||"",
@@ -730,6 +739,7 @@ app.put("/solar/inverters/:id", auth, async (req, res) => {
       creds.sma_user||"", creds.sma_pass||"", creds.sma_plant_id||"",
       creds.goodwe_user||"", creds.goodwe_pass||"", creds.goodwe_station_id||"",
       creds.huawei_user||"", creds.huawei_pass||"", creds.huawei_station_id||"",
+      creds.saj_user||"", creds.saj_pass||"", creds.saj_plant_id||"",
       creds.api_url||"", creds.api_key||"",
       req.params.id
     ]);

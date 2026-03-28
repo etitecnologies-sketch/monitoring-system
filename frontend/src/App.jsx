@@ -2183,12 +2183,14 @@ function SolarPage({ userRole }) {
   const [inverters, setInverters] = useState([]);
   const [clients, setClients] = useState([]);
   const [summary, setSummary] = useState({ total_inverters: 0, total_power_w: 0, energy_today_kwh: 0, revenue_today: 0 });
+  const [health, setHealth] = useState(null);
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState({ brand: "", client: "" });
 
   const load = useCallback(() => {
     api("/solar/inverters").then(setInverters).catch(() => {});
     api("/solar/summary").then(setSummary).catch(() => {});
+    api("/solar/health").then(setHealth).catch(() => {});
     if (userRole === "superadmin") api("/clients").then(setClients).catch(() => {});
   }, [userRole]);
 
@@ -2228,6 +2230,24 @@ function SolarPage({ userRole }) {
           </div>
         ))}
       </div>
+
+      {health && summary.total_inverters > 0 && health.with_data === 0 && (
+        <div style={{ ...S.card, marginBottom: 16, border: "1px solid rgba(239, 68, 68, 0.35)", background: "rgba(127, 29, 29, 0.15)" }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#fecaca", marginBottom: 6 }}>AVISO: Sem métricas solares</div>
+          <div style={{ fontSize: 11, color: "#fca5a5" }}>
+            O coletor solar parece não estar rodando ou não consegue autenticar. Verifique o serviço Processor (solar_monitor.py) e as credenciais do inversor.
+          </div>
+        </div>
+      )}
+
+      {health && summary.total_inverters > 0 && health.with_data > 0 && health.reporting_15m === 0 && (
+        <div style={{ ...S.card, marginBottom: 16, border: "1px solid rgba(245, 158, 11, 0.35)", background: "rgba(120, 53, 15, 0.15)" }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#fde68a", marginBottom: 6 }}>AVISO: Coleta solar atrasada</div>
+          <div style={{ fontSize: 11, color: "#fdba74" }}>
+            Existem métricas antigas, mas nenhum inversor reportou nos últimos 15 minutos. Confirme conectividade e credenciais (a API do fabricante pode estar fora).
+          </div>
+        </div>
+      )}
 
       <div style={{ ...S.card, marginBottom: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <select style={{ ...S.select, maxWidth: 160 }} value={filter.brand} onChange={(e) => setFilter({ ...filter, brand: e.target.value })}>

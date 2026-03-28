@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS solar_inverters (
     huawei_pass     TEXT DEFAULT '',
     huawei_station_id TEXT DEFAULT '',
 
+    -- SAJ (elekeeper)
+    saj_user        TEXT DEFAULT '',
+    saj_pass        TEXT DEFAULT '',
+    saj_plant_id    TEXT DEFAULT '',
+
     -- API genérica (qualquer inversor com endpoint HTTP)
     api_url         TEXT DEFAULT '',
     api_key         TEXT DEFAULT '',
