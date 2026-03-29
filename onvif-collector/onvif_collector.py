@@ -113,7 +113,7 @@ def _post_push(ingest_api_url: str, token: str, event_type: str, channel: int, d
     }
     if description:
         payload["description"] = description
-    requests.post(url, json=payload, timeout=8)
+    requests.post(url, json=payload, headers={"x-event-source": "onvif"}, timeout=8)
 
 
 def _get_channel_from_tokens(

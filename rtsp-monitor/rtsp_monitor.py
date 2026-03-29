@@ -26,7 +26,7 @@ def _post_push(ingest_api_url: str, token: str, event_type: str, channel: int, d
         "severity": severity,
         "description": description,
     }
-    requests.post(url, json=payload, timeout=8)
+    requests.post(url, json=payload, headers={"x-event-source": "rtsp-monitor"}, timeout=8)
 
 
 def _fetch_rtsp_configs(ingest_api_url: str, collector_key: str, client_id: Optional[int]) -> List[Dict[str, Any]]:

@@ -145,6 +145,9 @@ async function initDB() {
           device_id INT REFERENCES devices(id) ON DELETE CASCADE,
           event_type TEXT NOT NULL, channel INT DEFAULT 0,
           description TEXT, severity TEXT DEFAULT 'info',
+          source TEXT DEFAULT 'push',
+          raw_event_type TEXT DEFAULT '',
+          payload JSONB DEFAULT '{}'::jsonb,
           is_read BOOLEAN DEFAULT FALSE
       );
       CREATE TABLE IF NOT EXISTS onvif_configs (
@@ -219,7 +222,10 @@ async function initDB() {
       "ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
       "ALTER TABLE solar_inverters ADD COLUMN IF NOT EXISTS saj_user TEXT DEFAULT ''",
       "ALTER TABLE solar_inverters ADD COLUMN IF NOT EXISTS saj_pass TEXT DEFAULT ''",
-      "ALTER TABLE solar_inverters ADD COLUMN IF NOT EXISTS saj_plant_id TEXT DEFAULT ''"
+      "ALTER TABLE solar_inverters ADD COLUMN IF NOT EXISTS saj_plant_id TEXT DEFAULT ''",
+      "ALTER TABLE events ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'push'",
+      "ALTER TABLE events ADD COLUMN IF NOT EXISTS raw_event_type TEXT DEFAULT ''",
+      "ALTER TABLE events ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}'::jsonb"
     ];
     for (let m of migrations) { await pool.query(m).catch(() => {}); }
     
@@ -1108,9 +1114,17 @@ app.post("/push", metricsLimiter, async (req, res) => {
   const load_current = load_a || body.load_current || 0;
 
   // Extração de eventos do XML (Intelbras/Hikvision)
-  let finalEventType = event_type || type || xmlData.eventtype || xmlData.event;
+  const rawEventType = event_type || type || xmlData.eventtype || xmlData.event;
+  let finalEventType = rawEventType;
   const finalChannel = channel || xmlData.channelid || xmlData.channel || 0;
   let finalDescription = description || xmlData.eventdescription || xmlData.description || "";
+  const source = String(req.headers["x-event-source"] || body.source || (Object.keys(xmlData || {}).length ? "isapi" : "push"));
+
+  const payloadObj = { ...body };
+  delete payloadObj.token;
+  delete payloadObj.SN;
+  delete payloadObj.SerialNumber;
+  delete payloadObj.MAC;
 
   // Mapeamento de Analíticos de Vídeo (Intelbras/Hikvision)
   const eventMap = {
@@ -1177,9 +1191,9 @@ app.post("/push", metricsLimiter, async (req, res) => {
     // 2. Registrar Eventos
     if (finalEventType) {
       await pool.query(`
-        INSERT INTO events (device_id, event_type, channel, description, severity)
-        VALUES ($1, $2, $3, $4, $5)
-      `, [dev.id, finalEventType, finalChannel, finalDescription, severity || "info"]);
+        INSERT INTO events (device_id, event_type, channel, description, severity, source, raw_event_type, payload)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+      `, [dev.id, finalEventType, finalChannel, finalDescription, severity || "info", source, rawEventType || "", JSON.stringify(payloadObj || {})]);
       
       console.log(`[Push] Evento: ${finalEventType} em ${dev.name}`);
 
