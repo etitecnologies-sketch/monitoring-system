@@ -668,12 +668,12 @@ function ClientModal({ client, onSave, onClose }) {
             </div>
 
             <div style={S.divider} />
-            <div style={S.sectionTitle}>💬 WhatsApp (Evolution API)</div>
+            <div style={S.sectionTitle}>💬 WhatsApp (Twilio)</div>
             <div style={S.grid(2)}>
-              <div style={S.fg}><label style={S.label}>Instância</label><input style={S.input} value={form.wa_instance || ""} onChange={(e) => set("wa_instance", e.target.value)} placeholder="NOME_DA_INSTANCIA" /></div>
-              <div style={S.fg}><label style={S.label}>Token/API Key</label><input style={S.input} value={form.wa_token || ""} onChange={(e) => set("wa_token", e.target.value)} placeholder="API_KEY_AQUI" /></div>
+              <div style={S.fg}><label style={S.label}>Account SID</label><input style={S.input} value={form.wa_instance || ""} onChange={(e) => set("wa_instance", e.target.value)} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" /></div>
+              <div style={S.fg}><label style={S.label}>Auth Token</label><input style={S.input} value={form.wa_token || ""} onChange={(e) => set("wa_token", e.target.value)} placeholder="Seu Auth Token" /></div>
             </div>
-            <div style={S.fg}><label style={S.label}>Número de Destino (com DDD)</label><input style={S.input} value={form.wa_number || ""} onChange={(e) => set("wa_number", e.target.value)} placeholder="5565999999999" /></div>
+            <div style={S.fg}><label style={S.label}>Número de Destino (com DDD e DDI)</label><input style={S.input} value={form.wa_number || ""} onChange={(e) => set("wa_number", e.target.value)} placeholder="+5565999999999" /></div>
 
             <div style={S.divider} />
             <div style={S.fg}><label style={S.label}>Email para Alertas</label><input style={S.input} value={form.alert_email || ""} onChange={(e) => set("alert_email", e.target.value)} placeholder="alertas@empresa.com" /></div>

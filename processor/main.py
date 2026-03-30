@@ -113,7 +113,7 @@ def get_client_config(cur, client_id):
     return None, None, None, None, None, None, None
 
 def send_whatsapp(message, instance=None, token=None, number=None):
-    """Envia mensagem via Evolution API para o cliente ou superadmin"""
+    """Envia mensagem via API Oficial do Twilio para o cliente ou superadmin"""
     targets = []
     # Se o cliente tem WhatsApp configurado
     if instance and token and number:
@@ -123,24 +123,37 @@ def send_whatsapp(message, instance=None, token=None, number=None):
     if WA_INSTANCE and WA_TOKEN and WA_NUMBER:
         targets.append((WA_INSTANCE, WA_TOKEN, WA_NUMBER))
     
-    if not targets or not WA_API_URL: return
+    if not targets: return
 
-    for inst, tok, num in set(targets):
+    for account_sid, auth_token, num in set(targets):
         try:
-            url = f"{WA_API_URL.rstrip('/')}/message/sendText/{inst}"
-            headers = {"Content-Type": "application/json", "apikey": tok}
+            # Twilio Basic Auth
+            auth = (account_sid, auth_token)
+            url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+            
+            # Formata o número destino (precisa começar com whatsapp: e ter +)
+            # Assume que num pode ou não ter o prefixo. Se for só número BR, arruma.
+            dest_num = num if num.startswith("+") else f"+{num}"
+            if not dest_num.startswith("whatsapp:"):
+                dest_num = f"whatsapp:{dest_num}"
+                
+            # Sender number (pode ser o WA_API_URL no ambiente para guardar o número sender do Twilio, 
+            # ou fixo/configurado. Se não houver config, usamos um default de teste)
+            sender_num = os.getenv("TWILIO_WHATSAPP_NUMBER", "whatsapp:+14155238886")
+            
             payload = {
-                "number": num,
-                "options": {"delay": 1200, "presence": "composing", "linkPreview": False},
-                "textMessage": {"text": message}
+                "To": dest_num,
+                "From": sender_num,
+                "Body": message
             }
-            r = requests.post(url, json=payload, headers=headers, timeout=15)
+            
+            r = requests.post(url, data=payload, auth=auth, timeout=15)
             if r.status_code in [200, 201]:
-                logger.info(f"WhatsApp ✓ sent to {num}")
+                logger.info(f"WhatsApp (Twilio) ✓ sent to {dest_num}")
             else:
-                logger.error(f"WhatsApp error ({r.status_code}): {r.text}")
+                logger.error(f"WhatsApp (Twilio) error ({r.status_code}): {r.text}")
         except Exception as e:
-            logger.error(f"WhatsApp exception: {e}")
+            logger.error(f"WhatsApp (Twilio) exception: {e}")
 
 def send_telegram(message, token=None, chat_id=None):
     """Envia para o telegram do cliente ou do superadmin com tratamento de erro e escape HTML"""
