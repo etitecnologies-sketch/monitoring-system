@@ -647,22 +647,46 @@ def collect_inverter(inv):
     collector = COLLECTORS.get(brand, collect_generic)
     return collector(inv)
 
+def ensure_solar_schema(cur, conn):
+    cur.execute("ALTER TABLE IF EXISTS solar_inverters ADD COLUMN IF NOT EXISTS saj_user TEXT DEFAULT ''")
+    cur.execute("ALTER TABLE IF EXISTS solar_inverters ADD COLUMN IF NOT EXISTS saj_pass TEXT DEFAULT ''")
+    cur.execute("ALTER TABLE IF EXISTS solar_inverters ADD COLUMN IF NOT EXISTS saj_plant_id TEXT DEFAULT ''")
+    conn.commit()
+
 # ── Loop principal ────────────────────────────────────────────
 def run_solar_monitor():
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("""
-            SELECT id, client_id, name, brand, model, location, capacity_kwp, tariff_kwh,
-                   growatt_user, growatt_pass, growatt_plant_id,
-                   fronius_ip, fronius_device_id,
-                   solarman_token, solarman_app_id, solarman_logger_sn,
-                   sma_user, sma_pass, sma_plant_id,
-                   goodwe_user, goodwe_pass, goodwe_station_id,
-                   huawei_user, huawei_pass, huawei_station_id,
-                   saj_user, saj_pass, saj_plant_id,
-                   api_url, api_key, api_type, notes
-            FROM solar_inverters WHERE status='active'
-        """)
+        try:
+            cur.execute("""
+                SELECT id, client_id, name, brand, model, location, capacity_kwp, tariff_kwh,
+                       growatt_user, growatt_pass, growatt_plant_id,
+                       fronius_ip, fronius_device_id,
+                       solarman_token, solarman_app_id, solarman_logger_sn,
+                       sma_user, sma_pass, sma_plant_id,
+                       goodwe_user, goodwe_pass, goodwe_station_id,
+                       huawei_user, huawei_pass, huawei_station_id,
+                       saj_user, saj_pass, saj_plant_id,
+                       api_url, api_key, api_type, notes
+                FROM solar_inverters WHERE status='active'
+            """)
+        except Exception as e:
+            if "saj_user" in str(e):
+                ensure_solar_schema(cur, conn)
+                cur.execute("""
+                    SELECT id, client_id, name, brand, model, location, capacity_kwp, tariff_kwh,
+                           growatt_user, growatt_pass, growatt_plant_id,
+                           fronius_ip, fronius_device_id,
+                           solarman_token, solarman_app_id, solarman_logger_sn,
+                           sma_user, sma_pass, sma_plant_id,
+                           goodwe_user, goodwe_pass, goodwe_station_id,
+                           huawei_user, huawei_pass, huawei_station_id,
+                           saj_user, saj_pass, saj_plant_id,
+                           api_url, api_key, api_type, notes
+                    FROM solar_inverters WHERE status='active'
+                """)
+            else:
+                raise
         inverters = cur.fetchall()
         cols = ["id","client_id","name","brand","model","location","capacity_kwp","tariff_kwh",
                 "growatt_user","growatt_pass","growatt_plant_id",
