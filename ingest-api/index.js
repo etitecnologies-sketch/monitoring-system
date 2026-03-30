@@ -29,6 +29,63 @@ const escapeHtml = (text) => {
     .replace(/'/g, "&#039;");
 };
 
+function ensureDirSync(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function normalizeMac(input) {
+  return String(input || "").replace(/[:-]/g, "").toUpperCase();
+}
+
+function detectImageExt(buf, contentType = "") {
+  const ct = String(contentType || "").toLowerCase();
+  if (ct.includes("image/jpeg") || ct.includes("image/jpg")) return { ext: "jpg", mime: "image/jpeg" };
+  if (ct.includes("image/png")) return { ext: "png", mime: "image/png" };
+  if (ct.includes("image/webp")) return { ext: "webp", mime: "image/webp" };
+  if (Buffer.isBuffer(buf) && buf.length >= 12) {
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { ext: "jpg", mime: "image/jpeg" };
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return { ext: "png", mime: "image/png" };
+    if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return { ext: "webp", mime: "image/webp" };
+  }
+  return { ext: "bin", mime: ct.split(";")[0] || "application/octet-stream" };
+}
+
+function parseMultipartFirstFile(bodyBuf, boundary) {
+  const b = Buffer.from(`--${boundary}`);
+  const headerSep = Buffer.from("\r\n\r\n");
+  let i = bodyBuf.indexOf(b);
+  while (i !== -1) {
+    const partStart = i + b.length;
+    if (bodyBuf.slice(partStart, partStart + 2).toString() === "--") break;
+    let hStart = partStart;
+    if (bodyBuf.slice(hStart, hStart + 2).toString() === "\r\n") hStart += 2;
+    const hEnd = bodyBuf.indexOf(headerSep, hStart);
+    if (hEnd === -1) break;
+    const headersText = bodyBuf.slice(hStart, hEnd).toString("utf8");
+    const dataStart = hEnd + headerSep.length;
+    let next = bodyBuf.indexOf(b, dataStart);
+    if (next === -1) break;
+    let dataEnd = next - 2;
+    if (dataEnd < dataStart) dataEnd = dataStart;
+    const disp = headersText.split("\r\n").find((l) => l.toLowerCase().startsWith("content-disposition:")) || "";
+    const ctype = headersText.split("\r\n").find((l) => l.toLowerCase().startsWith("content-type:")) || "";
+    const mFilename = disp.match(/filename="([^"]*)"/i);
+    const filename = mFilename ? mFilename[1] : "";
+    const mPartName = disp.match(/name="([^"]*)"/i);
+    const partName = mPartName ? mPartName[1] : "";
+    const contentType = ctype.split(":").slice(1).join(":").trim();
+    if (filename || partName.toLowerCase().includes("file") || contentType.toLowerCase().startsWith("image/")) {
+      return {
+        filename,
+        contentType,
+        data: bodyBuf.slice(dataStart, dataEnd),
+      };
+    }
+    i = bodyBuf.indexOf(b, next);
+  }
+  return null;
+}
+
 // Middleware de diagnóstico para logar todas as requisições no console do Railway
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
@@ -53,6 +110,109 @@ app.get("/health", async (req, res) => {
 });
 app.get("/ready", (req, res) => res.json({ status: "ready" }));
 app.get("/push", (req, res) => res.json({ message: "Endpoint pronto para receber POST das câmeras." }));
+
+app.post(
+  "/picture-upload/:token?",
+  express.raw({ type: () => true, limit: "15mb" }),
+  async (req, res) => {
+    const ct = String(req.headers["content-type"] || "");
+    const bodyBuf = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
+    let fileBuf = bodyBuf;
+    let fileContentType = ct;
+    let fileName = "";
+
+    if (ct.toLowerCase().includes("multipart/form-data")) {
+      const m = ct.match(/boundary=([^\s;]+)/i);
+      const boundary = m ? m[1] : "";
+      if (boundary) {
+        const part = parseMultipartFirstFile(bodyBuf, boundary);
+        if (part) {
+          fileBuf = part.data;
+          fileContentType = part.contentType || ct;
+          fileName = part.filename || "";
+        }
+      }
+    }
+
+    if (!Buffer.isBuffer(fileBuf) || fileBuf.length === 0) {
+      return res.status(400).json({ error: "No file received" });
+    }
+
+    const tokenCandidate =
+      req.params.token ||
+      req.query.token ||
+      req.headers["x-device-token"] ||
+      req.query.sn ||
+      req.query.serial ||
+      req.query.mac;
+
+    let cleanMac = normalizeMac(req.query.mac || "");
+    if (!cleanMac && tokenCandidate) {
+      const s = String(tokenCandidate);
+      if (s.includes(":") || s.includes("-") || s.length === 12) cleanMac = normalizeMac(s);
+    }
+
+    if (!tokenCandidate && !cleanMac) {
+      return res.status(401).json({ error: "Identification (Token/SN/MAC) required" });
+    }
+
+    const dr = await pool.query(
+      `
+      SELECT id, client_id, name
+      FROM devices
+      WHERE token=$1
+         OR serial_number=$1
+         OR UPPER(REPLACE(REPLACE(mac_address, ':', ''), '-', '')) = $2
+      LIMIT 1
+      `,
+      [tokenCandidate || "", cleanMac]
+    );
+    if (dr.rows.length === 0) return res.status(401).json({ error: "Invalid identification" });
+    const dev = dr.rows[0];
+
+    await pool.query("UPDATE devices SET last_seen=NOW(), status='online' WHERE id=$1", [dev.id]);
+
+    const img = detectImageExt(fileBuf, fileContentType);
+    const baseDir = path.join(__dirname, "uploads", "snapshots", String(dev.id));
+    ensureDirSync(baseDir);
+
+    const safeBase = path.join(__dirname, "uploads", "snapshots");
+    const filename = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${img.ext}`;
+    const absPath = path.join(baseDir, filename);
+    fs.writeFileSync(absPath, fileBuf);
+
+    const snapshot = {
+      path: absPath,
+      mime: img.mime,
+      size: fileBuf.length,
+      name: fileName || "",
+      query: req.query || {},
+      received_at: new Date().toISOString(),
+    };
+
+    const er = await pool.query(
+      `
+      WITH latest AS (
+        SELECT id
+        FROM events
+        WHERE device_id=$1
+          AND time > NOW() - interval '2 minutes'
+        ORDER BY time DESC
+        LIMIT 1
+      )
+      UPDATE events e
+      SET payload = jsonb_set(COALESCE(e.payload, '{}'::jsonb), '{snapshot}', $2::jsonb, true)
+      WHERE e.id = (SELECT id FROM latest)
+      RETURNING e.id
+      `,
+      [dev.id, JSON.stringify(snapshot)]
+    );
+
+    if (!absPath.startsWith(safeBase)) return res.status(500).json({ error: "Unsafe snapshot path" });
+
+    res.json({ ok: true, device_id: dev.id, attached_event_id: er.rows[0]?.id || null });
+  }
+);
 
 // ── Security & Middleware ────────────────────────────────────
 app.use(express.json({ limit: "100kb" }));
@@ -1250,6 +1410,36 @@ app.get("/events", auth, async (req, res) => {
     const r = await pool.query(query, params);
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/events/:id/snapshot", auth, async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid id" });
+  const r = await pool.query(
+    `
+    SELECT e.payload, d.client_id
+    FROM events e
+    JOIN devices d ON d.id = e.device_id
+    WHERE e.id=$1
+    `,
+    [id]
+  );
+  if (r.rows.length === 0) return res.status(404).json({ error: "Not found" });
+  const row = r.rows[0];
+  if (req.user.role !== "superadmin" && row.client_id !== req.user.client_id) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const payload = row.payload || {};
+  const snapshot = payload.snapshot || {};
+  const snapPath = snapshot.path ? String(snapshot.path) : "";
+  const safeBase = path.join(__dirname, "uploads", "snapshots");
+  if (!snapPath || !snapPath.startsWith(safeBase)) return res.status(404).json({ error: "Snapshot not available" });
+  if (!fs.existsSync(snapPath)) return res.status(404).json({ error: "Snapshot not found" });
+  const buf = fs.readFileSync(snapPath);
+  const img = detectImageExt(buf, snapshot.mime || "");
+  res.setHeader("Content-Type", img.mime);
+  res.setHeader("Cache-Control", "no-store");
+  res.end(buf);
 });
 
 app.post("/metrics", metricsLimiter, async (req, res) => {
