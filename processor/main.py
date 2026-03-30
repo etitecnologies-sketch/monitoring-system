@@ -1,4 +1,4 @@
-import os, time, logging, smtplib, requests, datetime, subprocess, html, re
+import os, time, logging, smtplib, requests, datetime, subprocess, html, re, json
 from email.mime.text import MIMEText
 from contextlib import contextmanager
 import psycopg2
@@ -45,6 +45,7 @@ ALERT_EMAIL = sanitize(os.getenv("ALERT_EMAIL", ""))
 TWILIO_ACCOUNT_SID = sanitize(os.getenv("TWILIO_ACCOUNT_SID", ""))
 TWILIO_AUTH_TOKEN = sanitize(os.getenv("TWILIO_AUTH_TOKEN", ""))
 TWILIO_WHATSAPP_NUMBER = sanitize(os.getenv("TWILIO_WHATSAPP_NUMBER", ""))
+TWILIO_CONTENT_SID = sanitize(os.getenv("TWILIO_CONTENT_SID", ""))
 
 WA_INSTANCE = sanitize(os.getenv("WA_INSTANCE", ""))  # compat
 WA_TOKEN    = sanitize(os.getenv("WA_TOKEN", ""))  # compat
@@ -133,11 +134,13 @@ def send_whatsapp(message, instance=None, token=None, number=None):
 
         sender_num = TWILIO_WHATSAPP_NUMBER or os.getenv("TWILIO_WHATSAPP_NUMBER", "") or "whatsapp:+14155238886"
 
-        payload = {
-            "To": dest_num,
-            "From": sender_num,
-            "Body": message
-        }
+        payload = {"To": dest_num, "From": sender_num}
+        content_sid = TWILIO_CONTENT_SID or os.getenv("TWILIO_CONTENT_SID", "")
+        if content_sid:
+            payload["ContentSid"] = content_sid
+            payload["ContentVariables"] = json.dumps({"1": message[:1500]}, ensure_ascii=False)
+        else:
+            payload["Body"] = message
 
         r = requests.post(url, data=payload, auth=auth, timeout=15)
         if r.status_code in [200, 201]:
