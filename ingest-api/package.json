@@ -6,7 +6,6 @@
   "scripts": {
     "start": "node index.js",
     "dev": "NODE_ENV=development node index.js",
-    "postinstall": "npm install --prefix ../frontend && npm run build --prefix ../frontend",
     "lint": "eslint . --ext .js"
   },
   "dependencies": {
