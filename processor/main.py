@@ -506,7 +506,7 @@ def fire_alert(cur,conn,trigger_id,name,host,expr,value,threshold,device_id=None
     sev_label,sev_icon=get_severity_level(expr,value,threshold)
     meta=SEVERITY.get(expr,{"icon":"📊","label":expr})
     dtype,tags,dname,mac,sn=None,[],None,None,None
-    tg_tok, tg_cid, cl_email, cl_name = get_client_config(cur, client_id)
+    tg_tok, tg_cid, cl_email, cl_name, wa_inst, wa_tok, wa_num = get_client_config(cur, client_id)
     if device_id:
         try:
             cur.execute("SELECT device_type,tags,name,mac_address,serial_number FROM devices WHERE id=%s",(device_id,))
