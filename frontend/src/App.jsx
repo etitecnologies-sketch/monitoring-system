@@ -112,7 +112,7 @@ async function api(path, opts = {}) {
   const token = getToken();
 
   try {
-    const base = API === window.location.origin ? `${API}/api` : API;
+    const base = API;
     const url = `${base}${path}`;
     console.log(`📡 Chamando API: ${url}`);
     
