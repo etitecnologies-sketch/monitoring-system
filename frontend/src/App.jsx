@@ -515,7 +515,7 @@ function AuthPage({ onLogin }) {
         setStep("login"); return;
       }
       const d = await api("/auth/login", { method: "POST", body: JSON.stringify(form) });
-      setToken(d.token); onLogin(d.role, d.client_id);
+      setToken(d.token); onLogin(d.role, d.client_id, d.access_level);
     } catch (e) { setErr(e.error || "Erro"); }
     finally { setLoading(false); }
   };
@@ -1572,13 +1572,15 @@ function Dashboard({ userRole }) {
 }
 
 // ── Events Page (Analíticos) ──────────────────────────────────
-function EventsPage({ userRole }) {
+function EventsPage({ userRole, userAccessLevel }) {
   const [events, setEvents] = useState([]);
   const isMobile = useIsMobile();
+  const canView = userRole === "superadmin" || (userAccessLevel || 1) >= 2;
 
   const load = useCallback(() => {
+    if (!canView) return;
     api("/events").then((data) => setEvents(Array.isArray(data) ? data : [])).catch(() => {});
-  }, []);
+  }, [canView]);
 
   useEffect(() => {
     load();
@@ -1601,12 +1603,17 @@ function EventsPage({ userRole }) {
       <div style={S.pageSub}>Analíticos de vídeo e hardware em tempo real</div>
 
       <div style={{ ...S.card, padding: isMobile ? 15 : 24 }}>
-        {events.length === 0 && (
+        {!canView && (
+          <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>
+            Seu perfil não tem permissão para visualizar eventos de vídeo/câmera.
+          </div>
+        )}
+        {canView && events.length === 0 && (
           <div style={{ textAlign: "center", padding: 40, color: "#4a6080" }}>
             Nenhum evento detectado recentemente.
           </div>
         )}
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        {canView && <div style={{ display: "flex", flexDirection: "column" }}>
           {events.map((e) => (
             <div key={e.id} style={S.eventCard(e.severity)}>
               <div style={{ fontSize: 24 }}>{getIcon(e.event_type)}</div>
@@ -1632,7 +1639,7 @@ function EventsPage({ userRole }) {
               </div>
             </div>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   );
@@ -2363,12 +2370,17 @@ function NexusApp() {
   const [authed, setAuthed] = useState(!!getToken());
   const [userRole, setUserRole] = useState("superadmin");
   const [userClientId, setUserClientId] = useState(null);
+  const [userAccessLevel, setUserAccessLevel] = useState(3);
   const [page, setPage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (authed) {
-      api("/auth/me").then((u) => { setUserRole(u.role); setUserClientId(u.client_id); }).catch(() => {});
+      api("/auth/me").then((u) => { 
+        setUserRole(u.role); 
+        setUserClientId(u.client_id); 
+        setUserAccessLevel(u.access_level ?? (u.role === "superadmin" ? 3 : 1));
+      }).catch(() => {});
     }
   }, [authed]);
 
@@ -2376,7 +2388,7 @@ function NexusApp() {
     if (isMobile) setSidebarOpen(false);
   }, [page, isMobile]);
 
-  if (!authed) return <AuthPage onLogin={(role, cid) => { setUserRole(role); setUserClientId(cid); setAuthed(true); }} />;
+  if (!authed) return <AuthPage onLogin={(role, cid, accessLevel) => { setUserRole(role); setUserClientId(cid); setUserAccessLevel(accessLevel ?? (role === "superadmin" ? 3 : 1)); setAuthed(true); }} />;
 
   const isSuperAdmin = userRole === "superadmin";
 
@@ -2397,7 +2409,7 @@ function NexusApp() {
     { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "devices",   label: "Devices",   icon: "🖥️" },
     { id: "alerts",    label: "Alertas",   icon: "🚨" },
-    { id: "events",    label: "Eventos",   icon: "🎬" },
+    ...((userAccessLevel || 1) >= 2 ? [{ id: "events", label: "Eventos", icon: "🎬" }] : []),
   ];
 
   const NAV = isSuperAdmin ? NAV_SUPERADMIN : NAV_CLIENT;
@@ -2408,7 +2420,7 @@ function NexusApp() {
     devices:   <DevicesPage userRole={userRole} userClientId={userClientId} />,
     triggers:  <TriggersPage userRole={userRole} />,
     alerts:    <AlertsPage userRole={userRole} />,
-    events:    <EventsPage userRole={userRole} />,
+    events:    <EventsPage userRole={userRole} userAccessLevel={userAccessLevel} />,
     solar: <SolarPage userRole={userRole} />,
   };
 

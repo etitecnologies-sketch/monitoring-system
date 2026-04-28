@@ -259,6 +259,7 @@ async function initDB() {
       CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
           role TEXT NOT NULL DEFAULT 'client', client_id INT REFERENCES clients(id) ON DELETE CASCADE,
+          access_level INT NOT NULL DEFAULT 1,
           created_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE TABLE IF NOT EXISTS hosts (
@@ -346,6 +347,7 @@ async function initDB() {
     }
 
     const migrations = [
+      "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_level INT NOT NULL DEFAULT 1",
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS ddns_address TEXT DEFAULT ''",
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS monitor_port INT DEFAULT 0",
       "ALTER TABLE devices ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
@@ -457,6 +459,7 @@ initDB();
 const JWT_SECRET = process.env.JWT_SECRET || "nexuswatch-secret-key-2024";
 const sanitize = (v) => v ? v.replace(/["'`\s]/g, "").trim() : "";
 const WEBSOCKET_URL = sanitize(process.env.WEBSOCKET_URL || "");
+const WEBSOCKET_PUBLISH_KEY = sanitize(process.env.WEBSOCKET_PUBLISH_KEY || process.env.WS_PUBLISH_KEY || "");
 const TG_TOKEN_GLOBAL = sanitize(process.env.TELEGRAM_TOKEN || "");
 const TG_CHAT_ID_GLOBAL = sanitize(process.env.TELEGRAM_CHAT_ID || "");
 const WA_API_URL_GLOBAL = sanitize(process.env.WA_API_URL || "");
@@ -516,6 +519,23 @@ function superadmin(req, res, next) {
   next();
 }
 
+function clampAccessLevel(v) {
+  const n = parseInt(v);
+  if (!Number.isFinite(n)) return null;
+  if (n < 1) return 1;
+  if (n > 3) return 3;
+  return n;
+}
+
+function requireAccessLevel(minLevel) {
+  return function(req, res, next) {
+    if (req.user.role === "superadmin") return next();
+    const lvl = parseInt(req.user.access_level) || 1;
+    if (lvl < minLevel) return res.status(403).json({ error: "Insufficient access level" });
+    next();
+  };
+}
+
 function clientFilter(req) {
   return req.user.role === "superadmin" ? (req.query.client_id ? parseInt(req.query.client_id) : null) : req.user.client_id;
 }
@@ -531,7 +551,7 @@ app.post("/auth/setup", async (req, res) => {
   const exists = await pool.query("SELECT id FROM users LIMIT 1");
   if (exists.rows.length > 0) return res.status(409).json({ error: "Setup already done" });
   const hash = await bcrypt.hash(password, 10);
-  await pool.query("INSERT INTO users (username, password_hash, role) VALUES ($1,$2,'superadmin')", [username, hash]);
+  await pool.query("INSERT INTO users (username, password_hash, role, access_level) VALUES ($1,$2,'superadmin',3)", [username, hash]);
   res.json({ ok: true });
 });
 
@@ -541,8 +561,9 @@ app.post("/auth/login", loginLimiter, async (req, res) => {
   const user = r.rows[0];
   if (!user || !(await bcrypt.compare(password, user.password_hash)))
     return res.status(401).json({ error: "Invalid credentials" });
-  const token = jwt.sign({ id: user.id, username, role: user.role, client_id: user.client_id }, JWT_SECRET, { expiresIn: "7d" });
-  res.json({ token, role: user.role, client_id: user.client_id });
+  const access_level = clampAccessLevel(user.access_level) ?? (user.role === "superadmin" ? 3 : 1);
+  const token = jwt.sign({ id: user.id, username, role: user.role, client_id: user.client_id, access_level }, JWT_SECRET, { expiresIn: "7d" });
+  res.json({ token, role: user.role, client_id: user.client_id, access_level });
 });
 
 app.get("/auth/me", auth, (req, res) => res.json(req.user));
@@ -632,7 +653,7 @@ app.delete("/devices/:id", auth, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/devices/:id/onvif", auth, async (req, res) => {
+app.get("/devices/:id/onvif", auth, requireAccessLevel(2), async (req, res) => {
   const deviceId = parseInt(req.params.id);
   const access = await assertDeviceAccess(req, deviceId);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -643,7 +664,7 @@ app.get("/devices/:id/onvif", auth, async (req, res) => {
   res.json(r.rows[0]);
 });
 
-app.put("/devices/:id/onvif", auth, async (req, res) => {
+app.put("/devices/:id/onvif", auth, requireAccessLevel(3), async (req, res) => {
   const deviceId = parseInt(req.params.id);
   const access = await assertDeviceAccess(req, deviceId);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -687,7 +708,7 @@ app.put("/devices/:id/onvif", auth, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/devices/:id/rtsp", auth, async (req, res) => {
+app.get("/devices/:id/rtsp", auth, requireAccessLevel(2), async (req, res) => {
   const deviceId = parseInt(req.params.id);
   const access = await assertDeviceAccess(req, deviceId);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -698,7 +719,7 @@ app.get("/devices/:id/rtsp", auth, async (req, res) => {
   res.json(r.rows[0]);
 });
 
-app.put("/devices/:id/rtsp", auth, async (req, res) => {
+app.put("/devices/:id/rtsp", auth, requireAccessLevel(3), async (req, res) => {
   const deviceId = parseInt(req.params.id);
   const access = await assertDeviceAccess(req, deviceId);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -1123,10 +1144,51 @@ app.delete("/clients/:id", auth, superadmin, async (req, res) => {
 });
 
 app.post("/clients/:id/users", auth, superadmin, async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, access_level } = req.body;
+  const lvl = clampAccessLevel(access_level) ?? 1;
   const hash = await bcrypt.hash(password, 10);
-  await pool.query("INSERT INTO users (username, password_hash, role, client_id) VALUES ($1,$2,'client',$3)", [username, hash, req.params.id]);
+  await pool.query("INSERT INTO users (username, password_hash, role, client_id, access_level) VALUES ($1,$2,'client',$3,$4)", [username, hash, req.params.id, lvl]);
   res.json({ ok: true });
+});
+
+app.get("/clients/:id/users", auth, superadmin, async (req, res) => {
+  const r = await pool.query(
+    "SELECT id, username, role, client_id, access_level, created_at FROM users WHERE client_id=$1 ORDER BY username",
+    [req.params.id]
+  );
+  res.json(r.rows);
+});
+
+app.put("/clients/:id/users/:userId", auth, superadmin, async (req, res) => {
+  const userId = parseInt(req.params.userId);
+  if (!userId) return res.status(400).json({ error: "Invalid user id" });
+
+  const updates = [];
+  const params = [];
+
+  if (req.body.access_level != null) {
+    const lvl = clampAccessLevel(req.body.access_level);
+    if (!lvl) return res.status(400).json({ error: "Invalid access_level" });
+    params.push(lvl);
+    updates.push(`access_level=$${params.length}`);
+  }
+
+  if (typeof req.body.password === "string" && req.body.password.length > 0) {
+    const hash = await bcrypt.hash(req.body.password, 10);
+    params.push(hash);
+    updates.push(`password_hash=$${params.length}`);
+  }
+
+  if (updates.length === 0) return res.json({ ok: true });
+
+  params.push(req.params.id);
+  params.push(userId);
+  const r = await pool.query(
+    `UPDATE users SET ${updates.join(", ")} WHERE client_id=$${params.length - 1} AND id=$${params.length} RETURNING id, username, role, client_id, access_level, created_at`,
+    params
+  );
+  if (r.rows.length === 0) return res.status(404).json({ error: "User not found" });
+  res.json(r.rows[0]);
 });
 
 app.get("/clients/:id/stats", auth, superadmin, async (req, res) => {
@@ -1366,7 +1428,7 @@ app.post("/push", metricsLimiter, async (req, res) => {
     if (WEBSOCKET_URL) {
       fetch(`${WEBSOCKET_URL.replace(/\/$/, "")}/publish`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(WEBSOCKET_PUBLISH_KEY ? { "x-internal-key": WEBSOCKET_PUBLISH_KEY } : {}) },
         body: JSON.stringify({
           type: finalEventType ? "EVENT" : "METRIC",
           device_id: dev.id,
@@ -1394,7 +1456,7 @@ app.post("/push", metricsLimiter, async (req, res) => {
   }
 });
 
-app.get("/events", auth, async (req, res) => {
+app.get("/events", auth, requireAccessLevel(2), async (req, res) => {
   try {
     const cid = clientFilter(req);
     let query = `
@@ -1412,7 +1474,7 @@ app.get("/events", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/events/:id/snapshot", auth, async (req, res) => {
+app.get("/events/:id/snapshot", auth, requireAccessLevel(2), async (req, res) => {
   const id = parseInt(req.params.id);
   if (!id) return res.status(400).json({ error: "Invalid id" });
   const r = await pool.query(
@@ -1469,7 +1531,7 @@ app.post("/metrics", metricsLimiter, async (req, res) => {
     if (WEBSOCKET_URL) {
       const wsPublishUrl = `${WEBSOCKET_URL.replace(/\/$/, "")}/publish`;
       fetch(wsPublishUrl, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...(WEBSOCKET_PUBLISH_KEY ? { "x-internal-key": WEBSOCKET_PUBLISH_KEY } : {}) },
         body: JSON.stringify({ 
           host, cpu, memory, disk_percent, latency_ms, uptime_seconds, 
           load_avg, processes, temperature, device_id: devId, client_id: cid, 
@@ -1543,7 +1605,7 @@ async function cloudMonitor(deviceId = null) {
         
         if (WEBSOCKET_URL) {
           fetch(`${WEBSOCKET_URL}/publish`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
+            method: "POST", headers: { "Content-Type": "application/json", ...(WEBSOCKET_PUBLISH_KEY ? { "x-internal-key": WEBSOCKET_PUBLISH_KEY } : {}) },
             body: JSON.stringify({ host: targetHost, latency_ms: latency, status, device_id: dev.id, client_id: dev.client_id, time: new Date().toISOString() }),
           }).catch(() => {});
         }
@@ -1609,7 +1671,7 @@ const tcpServer = net.createServer((socket) => {
           if (WEBSOCKET_URL) {
             fetch(`${WEBSOCKET_URL.replace(/\/$/, "")}/publish`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...(WEBSOCKET_PUBLISH_KEY ? { "x-internal-key": WEBSOCKET_PUBLISH_KEY } : {}) },
               body: JSON.stringify({
                 type: "METRIC",
                 device_id: dev.id,

@@ -7,8 +7,10 @@ const app = express();
 app.use(express.json());
 
 const server = http.createServer(app);
-const JWT_SECRET = process.env.JWT_SECRET || "changeme-secret-jwt";
+const JWT_SECRET = process.env.JWT_SECRET || "nexuswatch-secret-key-2024";
 const PORT = process.env.PORT || 3001;
+const WS_REQUIRE_AUTH = String(process.env.WS_REQUIRE_AUTH || "").toLowerCase() === "true" || process.env.WS_REQUIRE_AUTH === "1";
+const WS_PUBLISH_KEY = process.env.WS_PUBLISH_KEY || process.env.PUBLISH_KEY || "";
 
 // Socket.IO with CORS and advanced options
 const io = new Server(server, {
@@ -43,31 +45,44 @@ app.get("/ready", (req, res) => {
 
 // ✅ Publish metrics endpoint (called by ingest-api)
 app.post("/publish", (req, res) => {
+  if (WS_PUBLISH_KEY) {
+    const key = String(req.headers["x-internal-key"] || "");
+    if (!key || key !== WS_PUBLISH_KEY) return res.status(401).json({ error: "Unauthorized" });
+  }
+
   const metric = req.body;
+  const host = metric?.host || metric?.name;
 
   // Validate payload
-  if (!metric || !metric.host) {
+  if (!metric || !host) {
     return res.status(400).json({ error: "Missing required fields: host" });
   }
 
   try {
-    // Broadcast to all subscribers of this host
-    const roomName = `host:${metric.host}`;
-    io.to(roomName).emit("metric", metric);
+    const clientId = metric.client_id != null ? String(metric.client_id) : null;
+    const isEvent = String(metric.type || "").toUpperCase() === "EVENT";
+    const payload = { ...metric, host };
+
+    const rooms = [];
+    if (clientId) {
+      rooms.push(`client:${clientId}:host:${host}`);
+      rooms.push(`client:${clientId}:all`);
+    }
+    rooms.push(`host:${host}`);
+
+    for (const roomName of rooms) {
+      io.to(roomName).emit(isEvent ? "event" : "metric", payload);
+    }
 
     // Log metric publishing
-    console.log(`[${new Date().toISOString()}] Published to ${roomName}:`, {
-      cpu: metric.cpu?.toFixed(1),
-      memory: metric.memory?.toFixed(1),
-      recipients: io.rooms.get(roomName)?.size || 0,
+    console.log(`[${new Date().toISOString()}] Published ${isEvent ? "event" : "metric"}:`, {
+      host,
+      client_id: clientId,
     });
-
-    // Also emit to all clients (for dashboard updates)
-    io.emit("metric:all", metric);
 
     res.json({
       ok: true,
-      recipients: io.rooms.get(roomName)?.size || 0,
+      rooms,
     });
   } catch (err) {
     console.error("Error publishing metric:", err);
@@ -94,6 +109,29 @@ app.use((err, req, res, next) => {
 });
 
 // Socket.IO connection handling
+io.use((socket, next) => {
+  const headerAuth = socket.handshake.headers?.authorization || socket.handshake.headers?.Authorization || "";
+  const headerToken = typeof headerAuth === "string" && headerAuth.startsWith("Bearer ") ? headerAuth.slice(7) : "";
+  const authToken = socket.handshake.auth?.token;
+  const token = authToken || headerToken || "";
+
+  if (!token) {
+    if (WS_REQUIRE_AUTH) return next(new Error("Unauthorized"));
+    socket.user = null;
+    return next();
+  }
+
+  try {
+    const user = jwt.verify(token, JWT_SECRET);
+    socket.user = user;
+    next();
+  } catch {
+    if (WS_REQUIRE_AUTH) return next(new Error("Unauthorized"));
+    socket.user = null;
+    next();
+  }
+});
+
 io.on("connection", (socket) => {
   const clientId = socket.id;
   const clientIp = socket.handshake.address;
@@ -119,13 +157,20 @@ io.on("connection", (socket) => {
       return;
     }
 
-    socket.join(`host:${host}`);
+    const user = socket.user;
+    if (!user) {
+      if (callback) callback({ error: "Unauthorized" });
+      return;
+    }
+
+    const hostRoom = user.role === "superadmin" ? `host:${host}` : `client:${user.client_id}:host:${host}`;
+    socket.join(hostRoom);
     const client = connectedClients.get(clientId);
     if (client) {
       client.subscriptions.add(host);
     }
 
-    console.log(`[${new Date().toISOString()}] 📡 ${clientId} subscribed to host:${host}`);
+    console.log(`[${new Date().toISOString()}] 📡 ${clientId} subscribed to ${hostRoom}`);
 
     if (callback) {
       callback({ ok: true, host });
@@ -140,13 +185,15 @@ io.on("connection", (socket) => {
 
   // Handle unsubscribe
   socket.on("unsubscribe", (host, callback) => {
-    socket.leave(`host:${host}`);
+    const user = socket.user;
+    const hostRoom = !user ? `host:${host}` : (user.role === "superadmin" ? `host:${host}` : `client:${user.client_id}:host:${host}`);
+    socket.leave(hostRoom);
     const client = connectedClients.get(clientId);
     if (client) {
       client.subscriptions.delete(host);
     }
 
-    console.log(`[${new Date().toISOString()}] 🚫 ${clientId} unsubscribed from host:${host}`);
+    console.log(`[${new Date().toISOString()}] 🚫 ${clientId} unsubscribed from ${hostRoom}`);
 
     if (callback) {
       callback({ ok: true, host });

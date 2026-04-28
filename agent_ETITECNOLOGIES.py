@@ -3,8 +3,8 @@ import os, time, logging, requests, subprocess, socket
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger('NexusWatch-ETITECNOLOGIES')
 
-INGEST_URL   = 'https://monitoring-system-production-1e5a.up.railway.app/metrics'
-DEVICE_TOKEN = 'b215ac34c47d3d0bbc468eea2f518a1fe36c4ae9216445429a23be2db267ab24'
+INGEST_URL   = os.getenv('INGEST_URL', 'http://localhost:3000/metrics')
+DEVICE_TOKEN = os.getenv('DEVICE_TOKEN', '')
 INTERVAL     = 10
 
 def get_hostname():
